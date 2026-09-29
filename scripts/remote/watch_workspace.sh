@@ -79,8 +79,11 @@ while true; do
     write_status "syncing"
     echo "$(date '+%Y-%m-%d %H:%M:%S %z') | local source change detected"
 
-    "$SCRIPT_DIR/sync_workspace.sh"
-    sync_exit_code=$?
+    if "$SCRIPT_DIR/sync_workspace.sh"; then
+      sync_exit_code=0
+    else
+      sync_exit_code=$?
+    fi
     if [[ "$sync_exit_code" -eq 0 ]]; then
       printf '%s\n' "$current_signature" >"$LAST_SIGNATURE_FILE"
       last_success_signature="$current_signature"
