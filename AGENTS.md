@@ -46,6 +46,8 @@ These instructions apply to this directory and every subdirectory under it.
 
 - Write commit subjects as `<type>: <concise Chinese summary>`.
 - Use conventional types such as `feat`, `fix`, `docs`, `refactor`, `test`, and `chore`.
+- Write the summary in Chinese unless a technical identifier must remain in English.
+- Example for the initial repository commit: `feat: 首次提交，初始化仓库，设计目录结构`.
 - Keep each commit focused on one coherent change and leave `main` in a runnable state.
 - Do not include the branch label, such as `[main]`, in the commit subject; Git displays it separately.
 
