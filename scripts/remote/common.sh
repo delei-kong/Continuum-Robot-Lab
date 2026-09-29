@@ -43,3 +43,28 @@ SCP_ARGS=(
 remote_exec() {
   ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" "$@"
 }
+
+build_source_manifest() {
+  local output_file="$1"
+  local temporary_file="${output_file}.tmp.$$"
+  local relative_file normalized_file file_hash
+
+  : >"$temporary_file"
+  while IFS= read -r -d '' relative_file; do
+    normalized_file="${relative_file#./}"
+    case "$normalized_file" in
+      datasets/*|outputs/*|runs/*|checkpoints/*|scripts/remote/config.local.sh|source_manifest.sha256|.sync-pause)
+        continue
+        ;;
+    esac
+    if [[ "$normalized_file" == *$'\n'* ]]; then
+      echo "Source filenames containing newlines are not supported: $normalized_file" >&2
+      return 3
+    fi
+    file_hash="$(LC_ALL=C shasum -a 256 "$PROJECT_ROOT/$normalized_file" | awk '{print $1}')"
+    printf '%s  %s\n' "$file_hash" "$normalized_file" >>"$temporary_file"
+  done < <(git -C "$PROJECT_ROOT" ls-files -co --exclude-standard -z)
+
+  LC_ALL=C sort "$temporary_file" >"$output_file"
+  rm -f "$temporary_file"
+}

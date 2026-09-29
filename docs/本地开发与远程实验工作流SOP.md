@@ -1,6 +1,6 @@
 # 本地开发与远程实验工作流 SOP
 
-> 版本：V1.1（2026-09-28）
+> 版本：V1.2（2026-09-29）
 > 适用范围：本地 Mac 开发 + 远程 Linux GPU 工作站实验
 > 当前进度：SSH、工作区同步、PyTorch GPU 冒烟测试、SOFA/SoftRobots 安装及官方绳驱 demo 已验证
 
@@ -31,6 +31,16 @@
 cd /Users/tory/Desktop/workspace/Continuum-Robot-Lab/workspace
 ```
 
+本机 `.zshrc` 会在终端启动于本项目或进入本项目目录时调用自动同步启动器。启动器具有进程去重机制，不会为多个终端重复创建监控进程。
+
+```bash
+scripts/remote/status_auto_sync.sh
+scripts/remote/stop_auto_sync.sh
+scripts/remote/start_auto_sync.sh
+```
+
+监控器只在可同步源码的内容指纹变化并稳定后上传，不会自动执行 Git commit 或 push。`datasets/`、`outputs/`、本机配置和缓存不会触发源码同步。
+
 ### Step 1：完成本地检查
 
 根据本次改动运行最小必要检查：
@@ -42,14 +52,20 @@ PYTHONPYCACHEPREFIX=.remote/pycache python3 -m py_compile tests/smoke/remote_gpu
 
 项目后续引入测试框架后，在此步增加对应的单元测试。
 
-### Step 2：检查连接并同步代码
+### Step 2：确认连接与同步状态
 
 ```bash
 scripts/remote/check_connection.sh
+scripts/remote/status_auto_sync.sh
+```
+
+自动同步正常时无需重复手动上传。需要立即同步或诊断时仍可运行：
+
+```bash
 scripts/remote/sync_workspace.sh
 ```
 
-只有看到 `workspace_sync_verification=passed` 才能启动远程实验。
+每次同步在应用新文件前都会验证远端源码是否仍与上次成功清单一致。发现远端修改、新增或删除时会返回 `REMOTE_SOURCE_DRIFT` 并停止，不覆盖远端。只有最近一次日志包含 `workspace_sync_verification=passed` 才能启动远程实验。
 
 ### Step 3：启动远程任务
 
@@ -142,6 +158,8 @@ scripts/remote/fetch_sofa_demo.sh <run_id>
 | 现象 | 处理 |
 |---|---|
 | SSH 失败 | 检查 `config.local.sh`、网络、端口和私钥权限 |
+| 自动同步未运行 | 执行 `scripts/remote/status_auto_sync.sh`，必要时重新启动 |
+| `REMOTE_SOURCE_DRIFT` | 停止同步，核对远端修改并通过Git分支回收，不强制覆盖 |
 | 同步校验失败 | 停止启动实验，重新同步并核对失败文件 |
 | 任务无结果 | 检查 `stdout.log`、`exit_code`、`FAILED` 和远程磁盘空间 |
 | SOFA 不可用 | 运行 `scripts/remote/check_sofa.sh`；实例重建后重新安装 |
@@ -153,6 +171,7 @@ scripts/remote/fetch_sofa_demo.sh <run_id>
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| V1.2 | 2026-09-29 | 增加进入项目时自动启动的源码监控、单实例保护和远端漂移阻断 |
 | V1.1 | 2026-09-28 | 增加远端 XFCE 桌面的 SofaImGui 可视化启动与 OpenGL 自检脚本 |
 | V1.0 | 2026-09-28 | 将 SOP 收敛为主操作流程；技术规范与验收历史拆分为独立文档 |
 | V0.9 | 2026-09-28 | 完成 SOFA/SoftRobots 环境及官方 CableConstraint demo 验证 |

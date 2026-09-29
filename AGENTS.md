@@ -25,13 +25,15 @@ These instructions apply to this directory and every subdirectory under it.
 ## Local and remote workflow
 
 - Develop and edit code locally in this workspace. The remote GPU workstation is an execution mirror, not a second source of truth.
+- A local background watcher may automatically mirror source changes to the remote execution workspace. It must use the guarded scripts in `scripts/remote/`, keep only one watcher process, and never auto-commit or auto-push Git.
 - Mirror this local `workspace/` root to `/root/gpufree-share/Continuum-Robot-Lab/workspace` on the current remote workstation so the project-root directory name is identical on both sides.
 - Use the scripts in `scripts/remote/` for SSH checks, environment setup, upload, background execution, status inspection, and result retrieval.
 - Keep machine-specific connection settings in `scripts/remote/config.local.sh`; keep that file ignored by Git.
 - Never store passwords, private keys, API tokens, or other credentials in this workspace.
 - The dedicated SSH private key remains at `~/.ssh/id_ed25519_continuum_robot_lab` and must never be copied into the repository or remote server.
 - Keep persistent remote code and important results on the remote shared storage. Treat the remote high-speed data disk as rebuildable temporary storage.
-- Do not edit remote source files manually except for emergency diagnosis. Reproduce any emergency fix locally before the next experiment.
+- Do not edit remote source files manually except for emergency diagnosis. Stop auto-sync before emergency remote editing, commit the fix on a remote Git branch, and merge it locally before resuming synchronization.
+- Every source upload must verify the remote source against the previous successful manifest. If remote drift is detected, stop without overwriting and require explicit conflict resolution.
 - Do not delete remote data or use destructive synchronization flags such as unguarded `rsync --delete` without explicit user approval and exact path verification.
 
 ## Reproducibility
