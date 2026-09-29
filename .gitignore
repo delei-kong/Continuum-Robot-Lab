@@ -1,0 +1,41 @@
+# Local workstation and remote connection state
+.remote/
+scripts/remote/config.local.sh
+
+# Research datasets and generated outputs
+datasets/*
+!datasets/README.md
+outputs/*
+!outputs/README.md
+runs/
+checkpoints/
+
+# Python environments, caches, and build products
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local secrets and editor files
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+.DS_Store
+._*
+
+# Large model and media outputs
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.mp4
