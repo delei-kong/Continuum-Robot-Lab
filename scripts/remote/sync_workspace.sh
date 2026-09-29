@@ -104,6 +104,7 @@ build_remote_manifest() {
       ! -path './.sync-pause' \
       ! -path '*/__pycache__/*' \
       ! -path '*/.pytest_cache/*' \
+      ! -path '*/.ipynb_checkpoints/*' \
       ! -path '*/.mypy_cache/*' \
       ! -path '*/.ruff_cache/*' \
       ! -name '*.pyc' \
@@ -111,6 +112,7 @@ build_remote_manifest() {
       ! -name '*.pth' \
       ! -name '*.mp4' \
       ! -name '.DS_Store' \
+      ! -name '._*' \
       -print0
   )
 
