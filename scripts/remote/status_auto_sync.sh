@@ -7,7 +7,9 @@ AUTO_SYNC_DIR="$PROJECT_ROOT/.remote/auto_sync"
 PID_FILE="$AUTO_SYNC_DIR/pid"
 STATUS_FILE="$AUTO_SYNC_DIR/status"
 LOG_FILE="$AUTO_SYNC_DIR/auto_sync.log"
+ERROR_LOG_FILE="$AUTO_SYNC_DIR/auto_sync.error.log"
 WATCHER="$SCRIPT_DIR/watch_workspace.sh"
+echo "manager=process"
 
 if [[ -f "$PID_FILE" ]]; then
   watcher_pid="$(tr -d '[:space:]' <"$PID_FILE")"
@@ -29,4 +31,8 @@ fi
 if [[ -f "$LOG_FILE" ]]; then
   echo "log=$LOG_FILE"
   tail -n 12 "$LOG_FILE"
+fi
+if [[ -s "$ERROR_LOG_FILE" ]]; then
+  echo "error_log=$ERROR_LOG_FILE"
+  tail -n 12 "$ERROR_LOG_FILE"
 fi

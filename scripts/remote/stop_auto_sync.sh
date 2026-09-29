@@ -12,18 +12,19 @@ if [[ ! -f "$PID_FILE" ]]; then
   exit 0
 fi
 
-watcher_pid="$(tr -d '[:space:]' <"$PID_FILE")"
+watcher_pid="$(tr -d '[:space:]' <"$PID_FILE" 2>/dev/null || true)"
 watcher_command="$(ps -p "$watcher_pid" -o command= 2>/dev/null || true)"
-if [[ ! "$watcher_pid" =~ ^[0-9]+$ || "$watcher_command" != *"$WATCHER"* ]]; then
+if [[ "$watcher_pid" =~ ^[0-9]+$ && "$watcher_command" == *"$WATCHER"* ]]; then
+  kill "$watcher_pid"
+else
   echo "Removing stale auto-sync PID state; no matching watcher process exists."
   rm -f "$PID_FILE"
   rmdir "$AUTO_SYNC_DIR/daemon.lock" 2>/dev/null || true
   exit 0
 fi
 
-kill "$watcher_pid"
 for _ in 1 2 3 4 5; do
-  if ! kill -0 "$watcher_pid" 2>/dev/null; then
+  if [[ ! "$watcher_pid" =~ ^[0-9]+$ ]] || ! kill -0 "$watcher_pid" 2>/dev/null; then
     echo "Stopped auto-sync watcher PID $watcher_pid."
     exit 0
   fi

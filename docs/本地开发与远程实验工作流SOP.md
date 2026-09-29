@@ -31,7 +31,7 @@
 cd /Users/tory/Desktop/workspace/Continuum-Robot-Lab/workspace
 ```
 
-本机 `.zshrc` 会在终端启动于本项目或进入本项目目录时调用自动同步启动器。启动器具有进程去重机制，不会为多个终端重复创建监控进程。
+本机 `.zshrc` 会在终端启动于本项目或进入本项目目录时调用自动同步启动器。启动器具有进程去重机制，不会为多个终端重复创建监控进程；如果监控进程结束，下次进入项目目录时会自动补启。
 
 ```bash
 scripts/remote/status_auto_sync.sh
@@ -75,7 +75,9 @@ scripts/remote/sync_workspace.sh
 |---|---|
 | PyTorch GPU 链路冒烟测试 | `scripts/remote/run_smoke.sh <run_id>` |
 | 官方 SOFA CableConstraint demo | `scripts/remote/run_sofa_demo.sh <run_id>` |
+| 官方 SoftRobots Trunk demo | `scripts/remote/run_sofa_trunk_demo.sh <run_id>` |
 | 远端桌面 SOFA 可视化 demo | `scripts/server/run_sofa_gui_demo.sh`（在远端终端执行） |
+| 远端桌面 Trunk 可视化 | `scripts/server/run_sofa_trunk_gui.sh`（在远端终端执行） |
 
 PyTorch 冒烟任务由 `tmux` 后台运行；当前 SOFA demo 是带超时限制的同步短任务。正式长任务必须使用 `tmux` 或调度器，不能依赖 SSH 会话存活。
 
@@ -84,6 +86,14 @@ PyTorch 冒烟任务由 `tmux` 后台运行；当前 SOFA demo 是带超时限�
 ```bash
 bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_sofa_gui_demo.sh
 ```
+
+打开 SoftRobots 官方 Trunk 教程场景：
+
+```bash
+bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_sofa_trunk_gui.sh
+```
+
+Trunk 原始场景默认使用正向求解，但绳索驱动动画被注释；直接运行主要验证多绳、网格、FEM 和求解器链路。若需可重复的主动弯曲，应在项目内建立有来源记录的适配副本，不修改 SOFA 安装目录中的原文件。
 
 只检查 X11、OpenGL、RTX 4090 渲染和 SOFA 路径，不打开窗口：
 
@@ -171,6 +181,7 @@ scripts/remote/fetch_sofa_demo.sh <run_id>
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| V1.3 | 2026-09-29 | 增加 SoftRobots 官方 Trunk 场景的 batch 和远端桌面启动入口 |
 | V1.2 | 2026-09-29 | 增加进入项目时自动启动的源码监控、单实例保护和远端漂移阻断 |
 | V1.1 | 2026-09-28 | 增加远端 XFCE 桌面的 SofaImGui 可视化启动与 OpenGL 自检脚本 |
 | V1.0 | 2026-09-28 | 将 SOP 收敛为主操作流程；技术规范与验收历史拆分为独立文档 |
