@@ -177,3 +177,8 @@ REMOTE_SCRIPT
 
 echo "Synced local workspace to $REMOTE_HOST:$REMOTE_PROJECT_ROOT"
 echo "Remote source drift is checked before every upload is applied."
+
+AUTO_SYNC_DIR="$REMOTE_STATE_DIR/auto_sync"
+mkdir -p "$AUTO_SYNC_DIR"
+LC_ALL=C shasum -a 256 "$MANIFEST_PATH" | awk '{print $1}' \
+  >"$AUTO_SYNC_DIR/last_success_signature"
