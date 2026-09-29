@@ -1,68 +1,44 @@
-# Continuum Robot Lab Workspace Rules
+# 连续体机器人实验室项目规则
 
-## Scope
+## 适用范围
 
-These instructions apply to this directory and every subdirectory under it.
+- 本文件适用于当前目录及其所有子目录。
+- 当前目录是项目根目录，也是源码的唯一可信来源。
 
-`/Users/tory/Desktop/workspace/Continuum-Robot-Lab/workspace` is the active research-project root and the local source of truth.
+## 语言
 
-## File placement
+- 面向用户的分析、说明、文档和回复使用中文；代码、命令及技术标识符可以保留英文。
 
-- Put all new active project code, Python packages, simulation scenes, configuration files, tests, operational scripts, experiment metadata, generated figures, and project documentation under this directory.
-- Do not create new active implementation files in the parent `Continuum-Robot-Lab` directory.
-- Keep reference and administrative materials in their existing parent-level locations unless the user explicitly requests a move:
-  - `../开题报告/`
-  - `../中期答辩/`
-  - `../paper/`
-  - `../CRVS/`
-- Treat `../CRVS/` as a legacy MATLAB reference project, not as the implementation root for the new Python research system.
-- Use a flat source layout under `src/`; do not add an extra project-name package directory unless the user explicitly revisits this decision.
-- Store source code in `src/`, infrastructure checks in `tests/smoke/`, other tests in `tests/`, operational tooling in `scripts/`, and documentation in `docs/`.
-- Store reusable research data under `datasets/` and generated logs, checkpoints, metrics, figures, and videos under `outputs/`.
-- Store project-level Agent workflows and Skill source under `agent/`. Treat this directory as the authoritative version; tool-specific installed copies are deployment artifacts.
-- Do not commit large datasets, checkpoints, caches, or generated outputs unless explicitly requested.
+## 目录
 
-## Local and remote workflow
+- 源代码放在 `src/`，采用扁平布局。
+- 测试放在 `tests/`，基础设施检查放在 `tests/smoke/`。
+- 运维脚本放在 `scripts/`，可复用数据放在 `datasets/`，运行结果放在 `outputs/`。
+- Agent 工作流和 Skill 源文件放在 `agent/`，其中的版本是权威版本。
+- 未经用户明确要求，不得将新实现放到项目根目录之外，也不得移动根目录之外的资料。
+- 未经用户明确要求，不得提交大型数据、检查点、缓存或生成结果。
 
-- Develop and edit code locally in this workspace. The remote GPU workstation is an execution mirror, not a second source of truth.
-- A local background watcher may automatically mirror source changes to the remote execution workspace. It must use the guarded scripts in `scripts/remote/`, keep only one watcher process, and never auto-commit or auto-push Git.
-- Mirror this local `workspace/` root to `/root/gpufree-share/Continuum-Robot-Lab/workspace` on the current remote workstation so the project-root directory name is identical on both sides.
-- Use the scripts in `scripts/remote/` for SSH checks, environment setup, upload, background execution, status inspection, and result retrieval.
-- Keep machine-specific connection settings in `scripts/remote/config.local.sh`; keep that file ignored by Git.
-- Never store passwords, private keys, API tokens, or other credentials in this workspace.
-- The dedicated SSH private key remains at `~/.ssh/id_ed25519_continuum_robot_lab` and must never be copied into the repository or remote server.
-- Keep persistent remote code and important results on the remote shared storage. Treat the remote high-speed data disk as rebuildable temporary storage.
-- Do not edit remote source files manually except for emergency diagnosis. Stop auto-sync before emergency remote editing, commit the fix on a remote Git branch, and merge it locally before resuming synchronization.
-- Every source upload must verify the remote source against the previous successful manifest. If remote drift is detected, stop without overwriting and require explicit conflict resolution.
-- Do not delete remote data or use destructive synchronization flags such as unguarded `rsync --delete` without explicit user approval and exact path verification.
+## 文档
 
-## Reproducibility
+- 项目文档保存在 `docs/`。
+- 有长期参考价值的讨论保存在 `docs/discuss/`，包括架构决策、方案比较、实验结论、重要问题分析和未决事项。
+- 远程工作流程发生变化时，同步更新 `docs/本地开发与远程实验工作流SOP.md`。
 
-- Run local syntax checks and lightweight tests before uploading code.
-- Every formal experiment must eventually record its Git commit, configuration snapshot, random seed, dependency versions, device information, start/end time, and exit code.
-- Give every remote run a unique run ID. Never overwrite a previous run directory.
-- Split machine-learning datasets by complete trajectory or episode, not by randomly mixing adjacent transitions.
-- Preserve failed experiment logs when they contain useful diagnostic information.
+## 本地与远程
 
-## Git conventions
+- 所有源码修改在本地完成；远程工作站仅用于执行。
+- 远程操作使用 `scripts/remote/` 中的脚本，并遵循远程工作流 SOP。
+- 发现本地与远程源码不一致时，立即停止同步；未经用户明确授权，不得覆盖或删除远程数据。
+- 不得在项目目录中保存密码、私钥、访问令牌或其他凭据。
 
-- Write commit subjects as `<type>: <concise Chinese summary>`.
-- Use conventional types such as `feat`, `fix`, `docs`, `refactor`, `test`, and `chore`.
-- Write the summary in Chinese unless a technical identifier must remain in English.
-- Example for the initial repository commit: `feat: 首次提交，初始化仓库，设计目录结构`.
-- Keep each commit focused on one coherent change and leave `main` in a runnable state.
-- Do not include the branch label, such as `[main]`, in the commit subject; Git displays it separately.
+## Git
 
-## Environment conventions
+- 提交标题使用 `<类型>: <中文摘要>` 格式。
+- 未经用户明确授权，不得创建 commit。
+- `git push` 属于高风险操作：必须先获得准备授权；检查并报告远程仓库、源分支、目标分支和待推送 commit 后，再获得执行授权。
+- 推送授权仅对当次报告的仓库、分支和 commit 有效；目标发生变化时必须重新授权。
+- 强制推送以及删除远程分支或标签，必须单独说明风险并再次获得明确授权。
 
-- Use Python 3.11 for the current remote research environment unless compatibility testing establishes a different pinned version.
-- Do not use the remote base Python 3.13 environment for project dependencies.
-- Prefer isolated Conda environments on the remote runtime disk during the current infrastructure phase.
-- Pin important research dependencies once the simulator choice is finalized.
-- Run long remote jobs under `tmux` or a scheduler so they do not depend on an SSH session remaining connected.
+## 环境
 
-## Documentation
-
-- Keep the remote-workflow SOP at `docs/本地开发与远程实验工作流SOP.md` current whenever the workflow, remote environment, commands, failure modes, or storage policy changes.
-- Record material workflow changes in the SOP revision table.
-- Keep research planning and implementation decisions explicit; do not silently expand the experiment scope.
+- 项目使用 Python 3.11 和独立 Conda 环境；具体配置与远程运行方法以远程工作流 SOP 为准。
