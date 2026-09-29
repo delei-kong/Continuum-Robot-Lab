@@ -93,7 +93,7 @@ bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_sofa_g
 bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_sofa_trunk_gui.sh
 ```
 
-Trunk 原始场景默认使用正向求解，但绳索驱动动画被注释；直接运行主要验证多绳、网格、FEM 和求解器链路。若需可重复的主动弯曲，应在项目内建立有来源记录的适配副本，不修改 SOFA 安装目录中的原文件。
+Trunk 场景已以上游 commit、许可证和校验值固定到 `src/simulation/examples/softrobots_trunk/`。该基线默认使用正向求解，但绳索驱动动画被注释；直接运行主要验证多绳、网格、FEM 和求解器链路。后续控制器通过新增项目自有文件实现，不直接修改固定上游基线。
 
 只检查 X11、OpenGL、RTX 4090 渲染和 SOFA 路径，不打开窗口：
 
@@ -181,6 +181,7 @@ scripts/remote/fetch_sofa_demo.sh <run_id>
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| V1.4 | 2026-09-29 | 将 SoftRobots v25.12 Trunk 源码和必要网格固定到本地工作区 |
 | V1.3 | 2026-09-29 | 增加 SoftRobots 官方 Trunk 场景的 batch 和远端桌面启动入口 |
 | V1.2 | 2026-09-29 | 增加进入项目时自动启动的源码监控、单实例保护和远端漂移阻断 |
 | V1.1 | 2026-09-28 | 增加远端 XFCE 桌面的 SofaImGui 可视化启动与 OpenGL 自检脚本 |
