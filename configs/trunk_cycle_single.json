@@ -1,0 +1,13 @@
+{
+  "dt": 0.01,
+  "controlled_cable": "cableL0",
+  "amplitude_mm": 20.0,
+  "period_s": 4.0,
+  "settle_duration_s": 1.0,
+  "cycles": 3,
+  "release_duration_s": 1.0,
+  "max_displacement_mm": 70.0,
+  "csv_flush_interval_steps": 20,
+  "trajectory_precision_s": 0.02,
+  "trajectory_color_rgba": [1.0, 0.45, 0.0, 1.0]
+}

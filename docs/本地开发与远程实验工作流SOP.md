@@ -1,8 +1,8 @@
 # 本地开发与远程实验工作流 SOP
 
-> 版本：V1.2（2026-09-29）
+> 版本：V1.9（2026-09-30）
 > 适用范围：本地 Mac 开发 + 远程 Linux GPU 工作站实验
-> 当前进度：SSH、工作区同步、PyTorch GPU 冒烟测试、SOFA/SoftRobots 安装及官方绳驱 demo 已验证
+> 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、末端轨迹和实时控制曲线已验证
 
 ## 1. 核心原则
 
@@ -76,8 +76,10 @@ scripts/remote/sync_workspace.sh
 | PyTorch GPU 链路冒烟测试 | `scripts/remote/run_smoke.sh <run_id>` |
 | 官方 SOFA CableConstraint demo | `scripts/remote/run_sofa_demo.sh <run_id>` |
 | 官方 SoftRobots Trunk demo | `scripts/remote/run_sofa_trunk_demo.sh <run_id>` |
+| 项目 Trunk 单绳周期控制 | `scripts/remote/run_trunk_cycle.sh <run_id>` |
 | 远端桌面 SOFA 可视化 demo | `scripts/server/run_sofa_gui_demo.sh`（在远端终端执行） |
 | 远端桌面 Trunk 可视化 | `scripts/server/run_sofa_trunk_gui.sh`（在远端终端执行） |
+| 远端桌面 Trunk 周期控制 | `scripts/server/run_trunk_cycle_gui.sh [run_id]`（在远端终端执行） |
 
 PyTorch 冒烟任务由 `tmux` 后台运行；当前 SOFA demo 是带超时限制的同步短任务。正式长任务必须使用 `tmux` 或调度器，不能依赖 SSH 会话存活。
 
@@ -94,6 +96,19 @@ bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_sofa_t
 ```
 
 Trunk 场景已以上游 commit、许可证和校验值固定到 `src/simulation/examples/softrobots_trunk/`。该基线默认使用正向求解，但绳索驱动动画被注释；直接运行主要验证多绳、网格、FEM 和求解器链路。后续控制器通过新增项目自有文件实现，不直接修改固定上游基线。
+
+观察项目自有的 `cableL0` 周期控制场景：
+
+```bash
+bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_cycle_gui.sh
+```
+
+场景先稳定 1 秒，再开始周期控制和轨迹采样。蓝色模型为 Trunk，红点为实时末端，
+绿色点为轨迹起点，橙色线为末端历史轨迹。场景使用独立安装的 SofaValidation
+`Monitor`；`Trunk Control Plot` 窗口实时显示 `cableL0` 位移指令。启动脚本会按固定的
+插件 `ACTIVE_ROOT` 显式加载动态库，并自动打开项目自有曲线窗口。曲线插件直接读取
+场景中的 `cableL0/cable.value` 并在进程内保存绘图样本；CSV 仅用于实验结果持久化，
+不再承担实时绘图通信。
 
 只检查 X11、OpenGL、RTX 4090 渲染和 SOFA 路径，不打开窗口：
 
@@ -117,10 +132,17 @@ SOFA demo：
 scripts/remote/fetch_sofa_demo.sh <run_id>
 ```
 
+Trunk 周期控制：
+
+```bash
+scripts/remote/fetch_trunk_cycle.sh <run_id>
+```
+
 验收通过后，结果分别位于：
 
 - `outputs/remote_smoke/<run_id>/`
 - `outputs/sofa_demo/<run_id>/`
+- `outputs/trunk_cycle/<run_id>/`
 
 正式实验至少要求：`exit_code=0`、无 `FAILED`、必需产物完整，且通过该实验的数值/物理验收条件。仅“程序无报错”不等于科研结论正确。
 
@@ -135,6 +157,30 @@ scripts/remote/fetch_sofa_demo.sh <run_id>
    scripts/remote/install_sofa.sh /path/to/SOFA_v25.12.00_Linux-Python_3.10.zip
    scripts/remote/check_sofa.sh
    ```
+
+5. 如项目需要末端轨迹显示，安装固定版本的 SofaValidation，再复查完整环境：
+
+   ```bash
+   scripts/remote/install_sofa_validation.sh
+   scripts/remote/check_sofa.sh
+   ```
+
+   安装脚本在本机下载并校验约 26 KB 的官方固定 commit 源码包，再上传到远端构建；
+   插件进入 `$REMOTE_RUNTIME_ROOT/plugins/SofaValidation/` 的独立版本目录，不覆盖
+   SOFA 主安装。远端构建依赖为 `libboost1.74-dev` 和 `libeigen3-dev`，缺失时通过
+   Ubuntu apt 镜像安装。
+
+6. 如项目需要 SofaImGui 实时控制曲线，安装项目自有可视化插件：
+
+   ```bash
+   scripts/remote/install_continuum_viz.sh
+   scripts/remote/check_sofa.sh
+   ```
+
+   插件固定匹配 SOFA 25.12 自带的 Dear ImGui 1.91.8 和 ImPlot 0.16。安装目录包含
+   项目插件源码哈希；源码变化时生成新版本目录，不覆盖旧库。插件只读当前场景中的
+   `cableL0/cable.value`，采样留在 C++ 内存中，不进入控制或力学求解链路。
+   `trajectory.csv` 由控制器独立记录并按配置的间隔批量 flush，结束及异常时强制落盘。
 
 `config.local.sh`、SSH 私钥和密码不得上传或提交。完整环境版本和重建说明见[远程工作流技术规范](./远程工作流技术规范.md)。
 
@@ -152,13 +198,15 @@ scripts/remote/fetch_sofa_demo.sh <run_id>
 
 ## 5. 当前开发边界与下一步
 
-当前已证明的是“本地开发 → 远程 GPU/SOFA 执行 → 结果回传”基础链路。尚未证明本课题的自有机器人模型、轨迹数据导出、参数标定或控制效果。
+当前已证明“本地开发 → 远程 GPU/SOFA 执行 → 结果回传”基础链路，以及基于固定
+SoftRobots Trunk 模型的单绳周期控制、末端轨迹显示、控制量内存实时绘图和 CSV 结果
+导出。尚未完成本课题机器人参数标定、目标闭环跟踪和控制效果评价。
 
 下一步按以下顺序推进：
 
-1. 建立项目自有的最小绳驱连续体机器人 SOFA 场景。
-2. 输出时间、控制量、末端位姿和状态轨迹 CSV。
-3. 为该场景增加独立启动、状态、验收和回传脚本。
+1. 确认内存实时控制曲线在远端桌面的刷新感受和可读性。
+2. 将末端三轴或目标误差接入同一只读绘图链路。
+3. 在周期控制基线上逐步引入目标点和闭环跟踪，并定义量化验收指标。
 4. 在进入正式实验前，补齐 Git commit、配置快照和资源监控元数据。
 
 已完成验证的数据和已知问题见[远程工作流验收记录](./远程工作流验收记录.md)。
@@ -173,6 +221,8 @@ scripts/remote/fetch_sofa_demo.sh <run_id>
 | 同步校验失败 | 停止启动实验，重新同步并核对失败文件 |
 | 任务无结果 | 检查 `stdout.log`、`exit_code`、`FAILED` 和远程磁盘空间 |
 | SOFA 不可用 | 运行 `scripts/remote/check_sofa.sh`；实例重建后重新安装 |
+| SofaValidation 不可用 | 运行 `scripts/remote/install_sofa_validation.sh`，再执行 `scripts/remote/check_sofa.sh` |
+| 实时曲线窗口不存在 | 运行 `scripts/remote/install_continuum_viz.sh`，确认启动日志含 `Registered GUI "Trunk Control Plot"` |
 | 重要数据位于临时盘 | 立即复制到远程持久存储并拉回必要结果 |
 
 当 SSH 明确返回 `Permission denied (publickey,password)`，且已确认远端实例、网络和端口正常时，在本机项目根目录恢复公钥授权：
@@ -195,6 +245,10 @@ scripts/remote/check_connection.sh
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| V1.9 | 2026-09-30 | 实时曲线改为直接读取 SOFA Data，CSV 改为批量 flush 的独立持久化通道 |
+| V1.8 | 2026-09-30 | 增加项目自有 SofaImGui/ImPlot 插件与实时 `cableL0` 控制曲线 |
+| V1.7 | 2026-09-30 | 固定安装 SofaValidation，并增加 Trunk 末端轨迹显示及插件检查流程 |
+| V1.6 | 2026-09-30 | 增加项目 Trunk 周期控制的 batch、GUI 和结果回传入口 |
 | V1.5 | 2026-09-30 | 增加 SSH 公钥授权丢失后的 `ssh-copy-id` 恢复流程与凭据边界 |
 | V1.4 | 2026-09-29 | 将 SoftRobots v25.12 Trunk 源码和必要网格固定到本地工作区 |
 | V1.3 | 2026-09-29 | 增加 SoftRobots 官方 Trunk 场景的 batch 和远端桌面启动入口 |
