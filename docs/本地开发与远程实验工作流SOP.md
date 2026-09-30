@@ -175,12 +175,27 @@ scripts/remote/fetch_sofa_demo.sh <run_id>
 | SOFA 不可用 | 运行 `scripts/remote/check_sofa.sh`；实例重建后重新安装 |
 | 重要数据位于临时盘 | 立即复制到远程持久存储并拉回必要结果 |
 
+当 SSH 明确返回 `Permission denied (publickey,password)`，且已确认远端实例、网络和端口正常时，在本机项目根目录恢复公钥授权：
+
+```bash
+source scripts/remote/config.local.sh
+if [[ ! -f "${REMOTE_IDENTITY}.pub" ]]; then
+  ssh-keygen -y -f "$REMOTE_IDENTITY" > "${REMOTE_IDENTITY}.pub"
+  chmod 644 "${REMOTE_IDENTITY}.pub"
+fi
+ssh-copy-id -i "${REMOTE_IDENTITY}.pub" -p "$REMOTE_PORT" "$REMOTE_HOST"
+scripts/remote/check_connection.sh
+```
+
+`ssh-copy-id` 的远端密码由用户交互式输入，不记录到命令、项目文件或日志。只安装 `.pub` 公钥，不得复制或上传私钥。连接恢复后仍需正常执行远端漂移检查和工作区同步。
+
 不直接删除或覆盖远程数据，不使用未经路径确认的 `rsync --delete`。更详细的验收和恢复规则见[远程工作流技术规范](./远程工作流技术规范.md)。
 
 ## 7. 修订记录
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| V1.5 | 2026-09-30 | 增加 SSH 公钥授权丢失后的 `ssh-copy-id` 恢复流程与凭据边界 |
 | V1.4 | 2026-09-29 | 将 SoftRobots v25.12 Trunk 源码和必要网格固定到本地工作区 |
 | V1.3 | 2026-09-29 | 增加 SoftRobots 官方 Trunk 场景的 batch 和远端桌面启动入口 |
 | V1.2 | 2026-09-29 | 增加进入项目时自动启动的源码监控、单实例保护和远端漂移阻断 |

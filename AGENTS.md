@@ -32,6 +32,24 @@
 - 发现本地与远程源码不一致时，立即停止同步；未经用户明确授权，不得覆盖或删除远程数据。
 - 不得在项目目录中保存密码、私钥、访问令牌或其他凭据。
 
+### SSH 公钥授权恢复
+
+- 当连接或自动同步返回 `Permission denied (publickey,password)` 时，先检查网络、实例状态和 `scripts/remote/config.local.sh`；确认是公钥授权丢失后，由用户在本机项目根目录执行以下流程：
+
+  ```bash
+  source scripts/remote/config.local.sh
+  if [[ ! -f "${REMOTE_IDENTITY}.pub" ]]; then
+    ssh-keygen -y -f "$REMOTE_IDENTITY" > "${REMOTE_IDENTITY}.pub"
+    chmod 644 "${REMOTE_IDENTITY}.pub"
+  fi
+  ssh-copy-id -i "${REMOTE_IDENTITY}.pub" -p "$REMOTE_PORT" "$REMOTE_HOST"
+  scripts/remote/check_connection.sh
+  ```
+
+- `ssh-copy-id` 会交互式要求远端用户密码；必须由用户输入，Agent 不得索取、记录或代填密码。
+- 只向远端安装 `.pub` 公钥；不得复制、输出或上传 `$REMOTE_IDENTITY` 指向的私钥。
+- 公钥授权恢复后，仍须按正常流程执行远端漂移检查和工作区同步，不得绕过同步保护。
+
 ## Git
 
 - 提交标题使用 `<类型>: <中文摘要>` 格式。
