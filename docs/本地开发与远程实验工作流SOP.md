@@ -1,8 +1,8 @@
 # 本地开发与远程实验工作流 SOP
 
-> 版本：V1.9（2026-09-30）
+> 版本：V1.12（2026-10-02）
 > 适用范围：本地 Mac 开发 + 远程 Linux GPU 工作站实验
-> 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、末端轨迹和实时控制曲线已验证
+> 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、25 Hz 逆向点位跟踪、末端轨迹和实时控制曲线已验证
 
 ## 1. 核心原则
 
@@ -40,6 +40,9 @@ scripts/remote/start_auto_sync.sh
 ```
 
 监控器只在可同步源码的内容指纹变化并稳定后上传，不会自动执行 Git commit 或 push。`datasets/`、`outputs/`、本机配置和缓存不会触发源码同步。
+修改 `config.local.sh` 中的主机、端口或密钥后，应执行一次
+`stop_auto_sync.sh` 和 `start_auto_sync.sh`，让长期运行的监控器重新读取连接参数。SSH
+和 SCP 默认启用保活及失联检测，避免实例切换时留下长期半开连接。
 
 ### Step 1：完成本地检查
 
@@ -77,9 +80,11 @@ scripts/remote/sync_workspace.sh
 | 官方 SOFA CableConstraint demo | `scripts/remote/run_sofa_demo.sh <run_id>` |
 | 官方 SoftRobots Trunk demo | `scripts/remote/run_sofa_trunk_demo.sh <run_id>` |
 | 项目 Trunk 单绳周期控制 | `scripts/remote/run_trunk_cycle.sh <run_id>` |
+| 项目 Trunk 25 Hz 逆向点位跟踪 | `scripts/remote/run_trunk_inverse_tracking.sh <run_id>` |
 | 远端桌面 SOFA 可视化 demo | `scripts/server/run_sofa_gui_demo.sh`（在远端终端执行） |
 | 远端桌面 Trunk 可视化 | `scripts/server/run_sofa_trunk_gui.sh`（在远端终端执行） |
 | 远端桌面 Trunk 周期控制 | `scripts/server/run_trunk_cycle_gui.sh [run_id]`（在远端终端执行） |
+| 远端桌面 Trunk 逆向点位跟踪 | `scripts/server/run_trunk_inverse_tracking_gui.sh [run_id]`（在远端终端执行） |
 
 PyTorch 冒烟任务由 `tmux` 后台运行；当前 SOFA demo 是带超时限制的同步短任务。正式长任务必须使用 `tmux` 或调度器，不能依赖 SSH 会话存活。
 
@@ -110,6 +115,15 @@ bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_
 场景中的 `cableL0/cable.value` 并在进程内保存绘图样本；CSV 仅用于实验结果持久化，
 不再承担实时绘图通信。
 
+观察 25 Hz 官方逆向点位跟踪场景：
+
+```bash
+bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_inverse_tracking_gui.sh
+```
+
+蓝色模型为 Trunk，绿色点为目标，红色点为映射末端，橙色线为末端历史轨迹。场景在
+初始目标保持 1 秒，用 2 秒移动至 `[20, -5, 180] mm`，再固定保持 5 秒。
+
 只检查 X11、OpenGL、RTX 4090 渲染和 SOFA 路径，不打开窗口：
 
 ```bash
@@ -138,11 +152,18 @@ Trunk 周期控制：
 scripts/remote/fetch_trunk_cycle.sh <run_id>
 ```
 
+Trunk 25 Hz 逆向点位跟踪：
+
+```bash
+scripts/remote/fetch_trunk_inverse_tracking.sh <run_id>
+```
+
 验收通过后，结果分别位于：
 
 - `outputs/remote_smoke/<run_id>/`
 - `outputs/sofa_demo/<run_id>/`
 - `outputs/trunk_cycle/<run_id>/`
+- `outputs/trunk_inverse_tracking/<run_id>/`
 
 正式实验至少要求：`exit_code=0`、无 `FAILED`、必需产物完整，且通过该实验的数值/物理验收条件。仅“程序无报错”不等于科研结论正确。
 
@@ -228,16 +249,13 @@ SoftRobots Trunk 模型的单绳周期控制、末端轨迹显示、控制量内
 当 SSH 明确返回 `Permission denied (publickey,password)`，且已确认远端实例、网络和端口正常时，在本机项目根目录恢复公钥授权：
 
 ```bash
-source scripts/remote/config.local.sh
-if [[ ! -f "${REMOTE_IDENTITY}.pub" ]]; then
-  ssh-keygen -y -f "$REMOTE_IDENTITY" > "${REMOTE_IDENTITY}.pub"
-  chmod 644 "${REMOTE_IDENTITY}.pub"
-fi
-ssh-copy-id -i "${REMOTE_IDENTITY}.pub" -p "$REMOTE_PORT" "$REMOTE_HOST"
-scripts/remote/check_connection.sh
+scripts/remote/authorize_ssh_key.sh
 ```
 
-`ssh-copy-id` 的远端密码由用户交互式输入，不记录到命令、项目文件或日志。只安装 `.pub` 公钥，不得复制或上传私钥。连接恢复后仍需正常执行远端漂移检查和工作区同步。
+脚本读取 `config.local.sh`，必要时从已有私钥生成对应 `.pub` 文件，然后调用
+`ssh-copy-id` 并执行连接检查。远端密码仍由用户在 `ssh-copy-id` 提示中交互式输入，脚本
+不接收、不记录密码。只安装 `.pub` 公钥，不得复制或上传私钥。连接恢复后仍需正常执行
+远端漂移检查和工作区同步。
 
 不直接删除或覆盖远程数据，不使用未经路径确认的 `rsync --delete`。更详细的验收和恢复规则见[远程工作流技术规范](./远程工作流技术规范.md)。
 
@@ -245,6 +263,9 @@ scripts/remote/check_connection.sh
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| V1.12 | 2026-10-02 | 增加 Trunk 25 Hz 官方逆向点位跟踪、性能统计与 GUI 入口 |
+| V1.11 | 2026-10-02 | 修复同步监控停止信号与 SSH 半开连接检测 |
+| V1.10 | 2026-10-02 | 增加交互式 SSH 公钥授权恢复脚本，统一端口变更后的恢复入口 |
 | V1.9 | 2026-09-30 | 实时曲线改为直接读取 SOFA Data，CSV 改为批量 flush 的独立持久化通道 |
 | V1.8 | 2026-09-30 | 增加项目自有 SofaImGui/ImPlot 插件与实时 `cableL0` 控制曲线 |
 | V1.7 | 2026-09-30 | 固定安装 SofaValidation，并增加 Trunk 末端轨迹显示及插件检查流程 |

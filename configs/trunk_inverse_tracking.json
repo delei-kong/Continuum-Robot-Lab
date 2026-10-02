@@ -1,0 +1,14 @@
+{
+  "dt": 0.04,
+  "control_rate_hz": 25.0,
+  "start_target_mm": [0.0, -5.0, 185.0],
+  "target_mm": [20.0, -5.0, 180.0],
+  "settle_duration_s": 1.0,
+  "transition_duration_s": 2.0,
+  "hold_duration_s": 5.0,
+  "deadline_ms": 40.0,
+  "benchmark_warmup_steps": 25,
+  "qp_epsilon": 0.001,
+  "trajectory_precision_s": 0.04,
+  "trajectory_color_rgba": [1.0, 0.45, 0.0, 1.0]
+}
