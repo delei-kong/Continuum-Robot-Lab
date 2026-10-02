@@ -24,7 +24,8 @@ cleanup_watcher() {
   rm -f "$PID_FILE"
   rmdir "$DAEMON_LOCK" 2>/dev/null || true
 }
-trap cleanup_watcher EXIT INT TERM
+trap cleanup_watcher EXIT
+trap 'exit 0' INT TERM
 printf '%s\n' "$$" >"$PID_FILE"
 
 write_status() {

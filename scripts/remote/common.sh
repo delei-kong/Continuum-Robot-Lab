@@ -26,6 +26,8 @@ SSH_ARGS=(
   -o IdentitiesOnly=yes
   -o BatchMode=yes
   -o ConnectTimeout=15
+  -o ServerAliveInterval=5
+  -o ServerAliveCountMax=3
   -o StrictHostKeyChecking=accept-new
   -o UserKnownHostsFile="$REMOTE_KNOWN_HOSTS"
 )
@@ -36,6 +38,8 @@ SCP_ARGS=(
   -o IdentitiesOnly=yes
   -o BatchMode=yes
   -o ConnectTimeout=15
+  -o ServerAliveInterval=5
+  -o ServerAliveCountMax=3
   -o StrictHostKeyChecking=accept-new
   -o UserKnownHostsFile="$REMOTE_KNOWN_HOSTS"
 )
