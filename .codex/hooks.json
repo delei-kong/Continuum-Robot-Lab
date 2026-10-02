@@ -1,0 +1,27 @@
+{
+  "description": "Codex 在回答结束和发起权限询问时播放声音提示。",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash \"$(git rev-parse --show-toplevel)/ring.sh\" stop",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash \"$(git rev-parse --show-toplevel)/ring.sh\" notification",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
