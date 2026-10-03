@@ -1,8 +1,8 @@
 # 本地开发与远程实验工作流 SOP
 
-> 版本：V1.14（2026-10-03）
+> 版本：V1.16（2026-10-03）
 > 适用范围：本地 Mac 开发 + 远程 Linux GPU 工作站实验
-> 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、25 Hz 逆向点位跟踪、末端轨迹和实时控制曲线已验证
+> 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、25 Hz 逆向点位跟踪、末端轨迹和实时控制曲线已验证；通用轨迹评估 Pipeline 的直线与闭合椭圆轨迹均已通过自动和人工可视化验收
 
 ## 1. 核心原则
 
@@ -82,11 +82,15 @@ scripts/remote/sync_workspace.sh
 | 项目 Trunk 单绳周期控制 | `scripts/remote/run_trunk_cycle.sh <run_id>` |
 | 项目 Trunk 25 Hz 逆向点位跟踪 | `scripts/remote/run_trunk_inverse_tracking.sh <run_id>` |
 | 项目 Trunk 25 Hz 周期随机多目标跟踪 | `scripts/remote/run_trunk_inverse_periodic_random.sh <run_id>` |
+| 项目 Trunk 25 Hz 直线轨迹评估 Pipeline | `scripts/remote/run_trunk_trajectory_tracking.sh <run_id>` |
+| 项目 Trunk 25 Hz 椭圆轨迹评估 Pipeline | `scripts/remote/run_trunk_trajectory_tracking_ellipse.sh <run_id>` |
 | 远端桌面 SOFA 可视化 demo | `scripts/server/run_sofa_gui_demo.sh`（在远端终端执行） |
 | 远端桌面 Trunk 可视化 | `scripts/server/run_sofa_trunk_gui.sh`（在远端终端执行） |
 | 远端桌面 Trunk 周期控制 | `scripts/server/run_trunk_cycle_gui.sh [run_id]`（在远端终端执行） |
 | 远端桌面 Trunk 逆向点位跟踪 | `scripts/server/run_trunk_inverse_tracking_gui.sh [run_id]`（在远端终端执行） |
 | 远端桌面 Trunk 周期随机多目标跟踪 | `scripts/server/run_trunk_inverse_periodic_random_gui.sh [run_id]`（在远端终端执行） |
+| 远端桌面 Trunk 直线轨迹评估 Pipeline | `scripts/server/run_trunk_trajectory_tracking_gui.sh [run_id]`（在远端终端执行） |
+| 远端桌面 Trunk 椭圆轨迹评估 Pipeline | `scripts/server/run_trunk_trajectory_tracking_ellipse_gui.sh [run_id]`（在远端终端执行） |
 
 PyTorch 冒烟任务由 `tmux` 后台运行；当前 SOFA demo 是带超时限制的同步短任务。正式长任务必须使用 `tmux` 或调度器，不能依赖 SSH 会话存活。
 
@@ -137,6 +141,28 @@ bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_
 分别表示 P0、P1 和 P2；每段用 5 秒移动并保持 1 秒。实际点位写入运行目录中的
 `generated_waypoints.json`，控制与误差记录写入 `trajectory.csv` 和 `performance.json`。
 
+观察通用轨迹评估 Pipeline 的第一条定时直线轨迹：
+
+```bash
+bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_trajectory_tracking_gui.sh [run_id]
+```
+
+场景先在 `[0, -5, 185] mm` 保持 1 秒，再用 5 秒沿绿色参考直线移动到
+`[65, -25, 145] mm`，最后保持 2 秒。黄色标记为终点，绿色点为当前时刻参考，红色点
+为实际末端，橙色线为实际轨迹。运行结束后输出标准 `trajectory.csv` 和
+`performance.json`；后者同时保留排除预热后的正式指标、全程指标和分阶段指标。
+
+观察同一 Pipeline 的三维闭合椭圆轨迹：
+
+```bash
+bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_trajectory_tracking_ellipse_gui.sh [run_id]
+```
+
+场景先在 `[0, -5, 185] mm` 保持 1 秒，再用 12 秒完成一圈三维椭圆，最后回到同一
+起终点保持 1 秒。绿色半透明实体管状闭环为参考轨迹，黄色标记为椭圆中心，绿色点为
+当前参考，红色点为实际末端，较粗的橙色线为实际轨迹；半透明参考管允许观察其内部近乎
+重合的实际轨迹。参考管和轨迹显示参数只作用于渲染，不进入逆向求解和控制链路。
+
 只检查 X11、OpenGL、RTX 4090 渲染和 SOFA 路径，不打开窗口：
 
 ```bash
@@ -171,12 +197,19 @@ Trunk 25 Hz 逆向点位跟踪：
 scripts/remote/fetch_trunk_inverse_tracking.sh <run_id>
 ```
 
+Trunk 25 Hz 轨迹评估 Pipeline：
+
+```bash
+scripts/remote/fetch_trunk_trajectory_tracking.sh <run_id>
+```
+
 验收通过后，结果分别位于：
 
 - `outputs/remote_smoke/<run_id>/`
 - `outputs/sofa_demo/<run_id>/`
 - `outputs/trunk_cycle/<run_id>/`
 - `outputs/trunk_inverse_tracking/<run_id>/`
+- `outputs/trajectory_tracking/<run_id>/`
 
 正式实验至少要求：`exit_code=0`、无 `FAILED`、必需产物完整，且通过该实验的数值/物理验收条件。仅“程序无报错”不等于科研结论正确。
 涉及机器人运动、控制效果或场景显示的阶段，还必须提供准确命令、预期现象和通过判据，
@@ -235,14 +268,17 @@ scripts/remote/fetch_trunk_inverse_tracking.sh <run_id>
 ## 5. 当前开发边界与下一步
 
 当前已证明“本地开发 → 远程 GPU/SOFA 执行 → 结果回传”基础链路，以及基于固定
-SoftRobots Trunk 模型的单绳周期控制、末端轨迹显示、控制量内存实时绘图和 CSV 结果
-导出。尚未完成本课题机器人参数标定、目标闭环跟踪和控制效果评价。
+SoftRobots Trunk 模型的单绳周期控制、末端轨迹显示、控制量内存实时绘图、单目标与
+周期随机多目标跟踪。通用轨迹、控制器、SOFA 后端、内存记录器和离线指标已通过标准
+接口组合；定时直线和闭合椭圆轨迹均已通过远端自动验证和人工可视化验收。
+组件职责、时间语义、配置约定、标准产物和扩展规则见
+[轨迹跟踪实验 Pipeline 设计](./discuss/轨迹跟踪实验Pipeline设计.md)。
 
 下一步按以下顺序推进：
 
-1. 确认内存实时控制曲线在远端桌面的刷新感受和可读性。
+1. 补充参数扫描入口，验证 Pipeline 的批量组合能力。
 2. 将末端三轴或目标误差接入同一只读绘图链路。
-3. 在周期控制基线上逐步引入目标点和闭环跟踪，并定义量化验收指标。
+3. 接入新的闭环控制器，并在相同轨迹和指标口径下与逆向 QP 基线比较。
 4. 在进入正式实验前，补齐 Git commit、配置快照和资源监控元数据。
 
 已完成验证的数据和已知问题见[远程工作流验收记录](./远程工作流验收记录.md)。
