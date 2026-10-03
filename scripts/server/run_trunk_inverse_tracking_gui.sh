@@ -60,8 +60,9 @@ export TRUNK_RUN_DIR="$RUN_DIR"
 
 echo "Starting the 25 Hz inverse Trunk target-tracking scene on DISPLAY=$DISPLAY"
 echo "Run ID: $RUN_ID"
-echo "Green point: target; red point: mapped tip; orange line: tip trajectory"
-echo "Schedule: hold 1 s, move to [20, -5, 180] mm in 2 s, then hold 5 s"
+echo "Yellow fixed diamond/crosshair: final target [65, -25, 145] mm"
+echo "Green moving point: current reference; red point: mapped tip; orange line: tip trajectory"
+echo "Schedule: hold 1 s, move to [65, -25, 145] mm in 5 s, then hold 2 s"
 
 set +e
 "$RUNSOFA" \

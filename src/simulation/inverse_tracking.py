@@ -8,6 +8,8 @@ from typing import Any, Mapping, Sequence
 
 
 Point3 = tuple[float, float, float]
+Triangle = tuple[int, int, int]
+Edge = tuple[int, int]
 
 
 def _point3(value: Any, name: str) -> Point3:
@@ -17,6 +19,77 @@ def _point3(value: Any, name: str) -> Point3:
     if not all(isfinite(axis) for axis in point):
         raise ValueError(f"{name} must contain finite values")
     return point  # type: ignore[return-value]
+
+
+def octahedron_marker_geometry(
+    radius_mm: float,
+) -> tuple[tuple[Point3, ...], tuple[Triangle, ...], tuple[Edge, ...]]:
+    """Build a centered octahedron used only as a target visual marker."""
+
+    radius = float(radius_mm)
+    if not isfinite(radius) or radius <= 0.0:
+        raise ValueError("target marker radius must be finite and positive")
+    vertices: tuple[Point3, ...] = (
+        (radius, 0.0, 0.0),
+        (-radius, 0.0, 0.0),
+        (0.0, radius, 0.0),
+        (0.0, -radius, 0.0),
+        (0.0, 0.0, radius),
+        (0.0, 0.0, -radius),
+    )
+    triangles: tuple[Triangle, ...] = (
+        (4, 0, 2),
+        (4, 2, 1),
+        (4, 1, 3),
+        (4, 3, 0),
+        (5, 2, 0),
+        (5, 1, 2),
+        (5, 3, 1),
+        (5, 0, 3),
+    )
+    edges: tuple[Edge, ...] = (
+        (0, 2),
+        (2, 1),
+        (1, 3),
+        (3, 0),
+        (4, 0),
+        (4, 1),
+        (4, 2),
+        (4, 3),
+        (5, 0),
+        (5, 1),
+        (5, 2),
+        (5, 3),
+    )
+    return vertices, triangles, edges
+
+
+def crosshair_marker_geometry(half_length_mm: float) -> tuple[tuple[Point3, ...], tuple[Edge, ...]]:
+    """Build three centered axis segments used as a target crosshair."""
+
+    half_length = float(half_length_mm)
+    if not isfinite(half_length) or half_length <= 0.0:
+        raise ValueError("target crosshair length must be finite and positive")
+    vertices: tuple[Point3, ...] = (
+        (-half_length, 0.0, 0.0),
+        (half_length, 0.0, 0.0),
+        (0.0, -half_length, 0.0),
+        (0.0, half_length, 0.0),
+        (0.0, 0.0, -half_length),
+        (0.0, 0.0, half_length),
+    )
+    return vertices, ((0, 1), (2, 3), (4, 5))
+
+
+def translate_marker(vertices: Sequence[Point3], center_mm: Point3) -> list[list[float]]:
+    """Translate marker-local vertices to the current world-space target."""
+
+    if len(center_mm) != 3 or not all(isfinite(axis) for axis in center_mm):
+        raise ValueError("marker center must contain three finite values")
+    return [
+        [vertex[axis] + center_mm[axis] for axis in range(3)]
+        for vertex in vertices
+    ]
 
 
 @dataclass(frozen=True)

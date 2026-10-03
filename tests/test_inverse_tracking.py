@@ -3,8 +3,11 @@ import unittest
 from simulation.inverse_tracking import (
     InverseTargetSignal,
     InverseTrackingConfig,
+    crosshair_marker_geometry,
+    octahedron_marker_geometry,
     percentile,
     summarize_step_times,
+    translate_marker,
 )
 
 
@@ -14,10 +17,10 @@ class InverseTargetSignalTest(unittest.TestCase):
             dt=0.04,
             control_rate_hz=25.0,
             start_target_mm=(0.0, -5.0, 185.0),
-            target_mm=(20.0, -5.0, 180.0),
+            target_mm=(65.0, -25.0, 145.0),
             settle_duration_s=1.0,
-            transition_duration_s=2.0,
-            hold_duration_s=5.0,
+            transition_duration_s=5.0,
+            hold_duration_s=2.0,
             deadline_ms=40.0,
             benchmark_warmup_steps=25,
         )
@@ -28,11 +31,11 @@ class InverseTargetSignalTest(unittest.TestCase):
 
     def test_schedule_phases_and_linear_transition(self) -> None:
         self.assertEqual(self.signal.sample(0.96).phase, "settle")
-        midpoint = self.signal.sample(2.0)
+        midpoint = self.signal.sample(3.5)
         self.assertEqual(midpoint.phase, "transition")
-        self.assertEqual(midpoint.position_mm, (10.0, -5.0, 182.5))
-        self.assertEqual(self.signal.sample(3.0).phase, "hold")
-        self.assertEqual(self.signal.sample(3.0).position_mm, self.config.target_mm)
+        self.assertEqual(midpoint.position_mm, (32.5, -15.0, 165.0))
+        self.assertEqual(self.signal.sample(6.0).phase, "hold")
+        self.assertEqual(self.signal.sample(6.0).position_mm, self.config.target_mm)
 
     def test_rate_must_match_step_period(self) -> None:
         with self.assertRaises(ValueError):
@@ -54,6 +57,21 @@ class InverseTargetSignalTest(unittest.TestCase):
         self.assertEqual(summary["deadline_misses"], 0)
         self.assertTrue(summary["p99_deadline_met"])
         self.assertAlmostEqual(percentile([10.0, 20.0, 30.0], 0.5), 20.0)
+
+    def test_target_marker_geometry_and_translation(self) -> None:
+        vertices, triangles, edges = octahedron_marker_geometry(6.0)
+        crosshair, crosshair_edges = crosshair_marker_geometry(9.0)
+        self.assertEqual((len(vertices), len(triangles), len(edges)), (6, 8, 12))
+        self.assertEqual((len(crosshair), len(crosshair_edges)), (6, 3))
+        translated = translate_marker(vertices, (20.0, -5.0, 180.0))
+        self.assertEqual(translated[0], [26.0, -5.0, 180.0])
+        self.assertEqual(translated[4], [20.0, -5.0, 186.0])
+
+    def test_target_marker_rejects_invalid_size(self) -> None:
+        with self.assertRaises(ValueError):
+            octahedron_marker_geometry(0.0)
+        with self.assertRaises(ValueError):
+            crosshair_marker_geometry(float("nan"))
 
 
 if __name__ == "__main__":

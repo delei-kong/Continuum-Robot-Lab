@@ -17,7 +17,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 from simulation.inverse_tracking import (  # noqa: E402
     InverseTargetSignal,
     InverseTrackingConfig,
+    crosshair_marker_geometry,
+    octahedron_marker_geometry,
     summarize_step_times,
+    translate_marker,
 )
 from simulation.scenes.trunk_common import Trunk  # noqa: E402
 
@@ -216,7 +219,9 @@ class TrunkInverseTrackingController(Sofa.Core.Controller):
         )
 
 
-def _create_inverse_trunk(root_node: Any, raw_config: dict[str, Any]) -> tuple[Any, Any, Any]:
+def _create_inverse_trunk(
+    root_node: Any, raw_config: dict[str, Any]
+) -> tuple[Any, Any, Any]:
     root_node.addObject("RequiredPlugin", name="SoftRobots")
     root_node.addObject("RequiredPlugin", name="SoftRobots.Inverse")
     root_node.addObject("RequiredPlugin", name="SofaPython3")
@@ -274,10 +279,38 @@ def _create_inverse_trunk(root_node: Any, raw_config: dict[str, Any]) -> tuple[A
         name="dofs",
         position=[raw_config["start_target_mm"]],
         showObject=True,
-        showObjectScale=5.0,
+        showObjectScale=1.5,
         showColor=[0.2, 1.0, 0.2, 1.0],
     )
     target.addObject("UncoupledConstraintCorrection", defaultCompliance=1e-5)
+
+    marker_vertices, marker_triangles, marker_edges = octahedron_marker_geometry(
+        float(raw_config["target_marker_radius_mm"])
+    )
+    crosshair_vertices, crosshair_edges = crosshair_marker_geometry(
+        float(raw_config["target_crosshair_half_length_mm"])
+    )
+    final_target = tuple(float(axis) for axis in raw_config["target_mm"])
+    target_visual = root_node.addChild("TargetVisualMarker")
+    diamond_visual = target_visual.addChild("Diamond")
+    diamond_visual.addObject(
+        "OglModel",
+        name="diamond",
+        position=translate_marker(marker_vertices, final_target),
+        triangles=marker_triangles,
+        edges=marker_edges,
+        color=raw_config["target_marker_color_rgba"],
+        updateNormals=False,
+    )
+    crosshair_visual = target_visual.addChild("Crosshair")
+    crosshair_visual.addObject(
+        "OglModel",
+        name="crosshair",
+        position=translate_marker(crosshair_vertices, final_target),
+        edges=crosshair_edges,
+        color=raw_config["target_crosshair_color_rgba"],
+        updateNormals=False,
+    )
 
     effectors = trunk.node.addChild("Effectors")
     effector_dofs = effectors.addObject(
