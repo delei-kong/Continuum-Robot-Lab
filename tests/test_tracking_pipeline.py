@@ -21,6 +21,7 @@ from simulation.tracking_pipeline import (
 )
 from simulation.trajectory import (
     LinearTrajectory,
+    PeriodicCatmullRomTrajectory,
     PeriodicEllipseTrajectory,
     TimedLinearTrajectory,
     polyline_tube_geometry,
@@ -175,6 +176,73 @@ class TrackingContractsTest(unittest.TestCase):
         )
         self.assertEqual(trajectory.duration_s, 10.0)
         self.assertEqual(trajectory.sample(5.5).cycle_index, 1)
+
+    def test_periodic_catmull_rom_interpolates_closed_waypoints(self) -> None:
+        waypoints = (
+            (0.0, 0.0, 0.0),
+            (4.0, 0.0, 1.0),
+            (2.0, 3.0, 2.0),
+        )
+        trajectory = PeriodicCatmullRomTrajectory(
+            waypoints_mm=waypoints,
+            settle_duration_s=1.0,
+            cycle_duration_s=3.0,
+            cycle_count=1,
+            hold_duration_s=1.0,
+        )
+        self.assertEqual(trajectory.duration_s, 5.0)
+        self.assertEqual(trajectory.sample(0.5).phase, "settle")
+        self.assertEqual(trajectory.sample(2.0).position_mm, waypoints[1])
+        self.assertEqual(trajectory.sample(3.0).position_mm, waypoints[2])
+        self.assertEqual(trajectory.sample(4.5).position_mm, waypoints[0])
+        self.assertEqual(trajectory.sample(4.5).phase, "hold")
+
+    def test_periodic_catmull_rom_is_velocity_continuous_at_cycle_boundary(self) -> None:
+        trajectory = PeriodicCatmullRomTrajectory(
+            waypoints_mm=(
+                (0.0, 0.0, 0.0),
+                (4.0, 0.0, 1.0),
+                (4.0, 3.0, 2.0),
+                (0.0, 3.0, 1.0),
+            ),
+            settle_duration_s=0.0,
+            cycle_duration_s=4.0,
+            cycle_count=2,
+            hold_duration_s=0.0,
+        )
+        before = trajectory.sample(4.0 - 1e-7)
+        after = trajectory.sample(4.0 + 1e-7)
+        for left, right in zip(before.position_mm, after.position_mm):
+            self.assertAlmostEqual(left, right, places=5)
+        for left, right in zip(before.velocity_mm_s, after.velocity_mm_s):
+            self.assertAlmostEqual(left, right, places=5)
+        self.assertEqual(before.cycle_index, 0)
+        self.assertEqual(after.cycle_index, 1)
+
+    def test_periodic_catmull_rom_factory_and_validation(self) -> None:
+        trajectory = trajectory_from_mapping(
+            {
+                "type": "periodic_catmull_rom",
+                "waypoints_mm": [
+                    [0.0, 0.0, 0.0],
+                    [4.0, 0.0, 1.0],
+                    [2.0, 3.0, 2.0],
+                ],
+                "settle_duration_s": 1.0,
+                "cycle_duration_s": 3.0,
+                "cycle_count": 1,
+                "hold_duration_s": 1.0,
+            }
+        )
+        self.assertIsInstance(trajectory, PeriodicCatmullRomTrajectory)
+        with self.assertRaises(ValueError):
+            PeriodicCatmullRomTrajectory(
+                waypoints_mm=((0.0, 0.0, 0.0), (1.0, 0.0, 0.0)),
+                settle_duration_s=0.0,
+                cycle_duration_s=1.0,
+                cycle_count=1,
+                hold_duration_s=0.0,
+            )
 
     def test_trajectory_polyline_samples_reference_and_edges(self) -> None:
         trajectory = LinearTrajectory((0.0, 0.0, 0.0), (2.0, 0.0, 0.0), 1.0)

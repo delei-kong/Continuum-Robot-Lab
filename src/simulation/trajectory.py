@@ -222,6 +222,122 @@ class PeriodicEllipseTrajectory:
         )
 
 
+@dataclass(frozen=True)
+class PeriodicCatmullRomTrajectory:
+    """Traverse a smooth closed curve interpolating three or more waypoints."""
+
+    waypoints_mm: tuple[Vec3, ...]
+    settle_duration_s: float
+    cycle_duration_s: float
+    cycle_count: int
+    hold_duration_s: float
+
+    def __post_init__(self) -> None:
+        if len(self.waypoints_mm) < 3:
+            raise ValueError("Catmull-Rom trajectory needs at least three waypoints")
+        for index, waypoint in enumerate(self.waypoints_mm):
+            finite_vec3(waypoint, f"Catmull-Rom waypoint {index}")
+        if not isfinite(self.settle_duration_s) or self.settle_duration_s < 0.0:
+            raise ValueError(
+                "Catmull-Rom settle duration must be finite and non-negative"
+            )
+        if not isfinite(self.cycle_duration_s) or self.cycle_duration_s <= 0.0:
+            raise ValueError("Catmull-Rom cycle duration must be finite and positive")
+        if isinstance(self.cycle_count, bool) or not isinstance(self.cycle_count, int):
+            raise ValueError("Catmull-Rom cycle count must be an integer")
+        if self.cycle_count <= 0:
+            raise ValueError("Catmull-Rom cycle count must be positive")
+        if not isfinite(self.hold_duration_s) or self.hold_duration_s < 0.0:
+            raise ValueError(
+                "Catmull-Rom hold duration must be finite and non-negative"
+            )
+
+    @property
+    def start_mm(self) -> Vec3:
+        return self.waypoints_mm[0]
+
+    @property
+    def end_mm(self) -> Vec3:
+        return self.start_mm
+
+    @property
+    def duration_s(self) -> float:
+        return (
+            self.settle_duration_s
+            + self.cycle_duration_s * self.cycle_count
+            + self.hold_duration_s
+        )
+
+    def reset(self, seed: int) -> None:
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            raise ValueError("trajectory seed must be an integer")
+
+    def sample(self, time_s: float) -> TrajectoryReference:
+        if not isfinite(time_s) or time_s < 0.0:
+            raise ValueError("trajectory time must be finite and non-negative")
+        if time_s <= self.settle_duration_s:
+            return TrajectoryReference(time_s, self.start_mm, phase="settle")
+        tracking_time_s = time_s - self.settle_duration_s
+        tracking_duration_s = self.cycle_duration_s * self.cycle_count
+        if tracking_time_s >= tracking_duration_s:
+            return TrajectoryReference(time_s, self.end_mm, phase="hold")
+
+        waypoint_count = len(self.waypoints_mm)
+        segment_position = (
+            tracking_time_s * waypoint_count / self.cycle_duration_s
+        )
+        segment_index = int(segment_position) % waypoint_count
+        parameter = segment_position - int(segment_position)
+        p0 = self.waypoints_mm[(segment_index - 1) % waypoint_count]
+        p1 = self.waypoints_mm[segment_index]
+        p2 = self.waypoints_mm[(segment_index + 1) % waypoint_count]
+        p3 = self.waypoints_mm[(segment_index + 2) % waypoint_count]
+
+        parameter_squared = parameter * parameter
+        parameter_cubed = parameter_squared * parameter
+        position: list[float] = []
+        derivative: list[float] = []
+        second_derivative: list[float] = []
+        for axis in range(3):
+            linear = -p0[axis] + p2[axis]
+            quadratic = 2.0 * p0[axis] - 5.0 * p1[axis] + 4.0 * p2[axis] - p3[axis]
+            cubic = -p0[axis] + 3.0 * p1[axis] - 3.0 * p2[axis] + p3[axis]
+            position.append(
+                0.5
+                * (
+                    2.0 * p1[axis]
+                    + linear * parameter
+                    + quadratic * parameter_squared
+                    + cubic * parameter_cubed
+                )
+            )
+            derivative.append(
+                0.5
+                * (
+                    linear
+                    + 2.0 * quadratic * parameter
+                    + 3.0 * cubic * parameter_squared
+                )
+            )
+            second_derivative.append(
+                0.5 * (2.0 * quadratic + 6.0 * cubic * parameter)
+            )
+
+        parameter_rate = waypoint_count / self.cycle_duration_s
+        return TrajectoryReference(
+            time_s=time_s,
+            position_mm=tuple(position),  # type: ignore[arg-type]
+            velocity_mm_s=tuple(  # type: ignore[arg-type]
+                value * parameter_rate for value in derivative
+            ),
+            acceleration_mm_s2=tuple(  # type: ignore[arg-type]
+                value * parameter_rate**2 for value in second_derivative
+            ),
+            phase="tracking",
+            cycle_index=int(tracking_time_s / self.cycle_duration_s),
+        )
+
+
 def sample_trajectory_polyline(
     trajectory: Trajectory, sample_count: int
 ) -> tuple[list[Vec3], list[list[int]]]:
@@ -331,6 +447,17 @@ def trajectory_from_mapping(values: Mapping[str, Any]) -> Trajectory:
             ),
             axis_sin_mm=finite_vec3(
                 tuple(values["axis_sin_mm"]), "ellipse sine axis"
+            ),
+            settle_duration_s=float(values["settle_duration_s"]),
+            cycle_duration_s=float(values["cycle_duration_s"]),
+            cycle_count=int(values["cycle_count"]),
+            hold_duration_s=float(values["hold_duration_s"]),
+        )
+    if trajectory_type == "periodic_catmull_rom":
+        return PeriodicCatmullRomTrajectory(
+            waypoints_mm=tuple(
+                finite_vec3(tuple(waypoint), f"Catmull-Rom waypoint {index}")
+                for index, waypoint in enumerate(values["waypoints_mm"])
             ),
             settle_duration_s=float(values["settle_duration_s"]),
             cycle_duration_s=float(values["cycle_duration_s"]),
