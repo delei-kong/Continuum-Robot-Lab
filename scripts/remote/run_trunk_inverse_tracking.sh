@@ -7,13 +7,18 @@ source "$SCRIPT_DIR/common.sh"
 
 RUN_ID="${1:-$(date -u +%Y%m%dT%H%M%SZ)_trunk_inverse_tracking}"
 STEPS="${TRUNK_INVERSE_STEPS:-200}"
+CONFIG_REL="${TRUNK_INVERSE_CONFIG_REL:-configs/trunk_inverse_tracking.json}"
 
 if [[ ! "$RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "Invalid run ID: use only letters, digits, dot, underscore, and hyphen." >&2
   exit 2
 fi
-if [[ ! "$STEPS" =~ ^[1-9][0-9]*$ ]] || (( STEPS < 2 || STEPS > 200 )); then
-  echo "TRUNK_INVERSE_STEPS must be an integer from 2 to 200." >&2
+if [[ ! "$STEPS" =~ ^[1-9][0-9]*$ ]] || (( STEPS < 2 || STEPS > 5000 )); then
+  echo "TRUNK_INVERSE_STEPS must be an integer from 2 to 5000." >&2
+  exit 2
+fi
+if [[ ! "$CONFIG_REL" =~ ^configs/[A-Za-z0-9._/-]+\.json$ ]] || [[ "$CONFIG_REL" == *..* ]]; then
+  echo "TRUNK_INVERSE_CONFIG_REL must name a JSON file below configs/." >&2
   exit 2
 fi
 
@@ -33,6 +38,7 @@ remote_exec bash -s -- \
   "$REMOTE_RUN_DIR" \
   "$RUN_ID" \
   "$STEPS" \
+  "$CONFIG_REL" \
   "$LOCAL_GIT_COMMIT" \
   "$LOCAL_GIT_WORKTREE" <<'REMOTE_SCRIPT'
 set -euo pipefail
@@ -43,13 +49,14 @@ project_root="$4"
 run_dir="$5"
 run_id="$6"
 steps="$7"
-git_commit="$8"
-git_worktree="$9"
+config_rel="$8"
+git_commit="$9"
+git_worktree="${10}"
 
 active_root_file="$install_root/ACTIVE_ROOT"
 active_plugin_file="$plugin_root/ACTIVE_ROOT"
 scene="$project_root/src/simulation/scenes/trunk_inverse_tracking.py"
-config="$project_root/configs/trunk_inverse_tracking.json"
+config="$project_root/$config_rel"
 if [[ ! -f "$active_root_file" ]]; then
   echo "SOFA is not installed: missing $active_root_file" >&2
   exit 3
@@ -107,6 +114,7 @@ payload = {
     "run_id": ${run_id@Q},
     "scene": ${scene@Q},
     "steps": int(${steps@Q}),
+    "config": ${config_rel@Q},
     "gui": "batch",
     "start_utc": ${start_utc@Q},
     "end_utc": ${end_utc@Q},

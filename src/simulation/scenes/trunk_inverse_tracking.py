@@ -17,7 +17,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 from simulation.inverse_tracking import (  # noqa: E402
     InverseTargetSignal,
     InverseTrackingConfig,
+    PeriodicRandomTargetSignal,
+    PeriodicRandomTrackingConfig,
+    Point3,
     crosshair_marker_geometry,
+    generate_random_waypoints,
     octahedron_marker_geometry,
     summarize_step_times,
     translate_marker,
@@ -28,6 +32,9 @@ from simulation.scenes.trunk_common import Trunk  # noqa: E402
 CABLE_NAMES = tuple(f"cableL{index}" for index in range(4)) + tuple(
     f"cableS{index}" for index in range(4)
 )
+TrackingConfig = InverseTrackingConfig | PeriodicRandomTrackingConfig
+TargetSignal = InverseTargetSignal | PeriodicRandomTargetSignal
+MarkerSpec = tuple[Point3, list[float], list[float]]
 
 
 def _load_config() -> tuple[dict[str, Any], Path]:
@@ -53,6 +60,8 @@ class TrunkInverseTrackingController(Sofa.Core.Controller):
         "step",
         "time_s",
         "phase",
+        "cycle_index",
+        "waypoint_index",
         "target_x_mm",
         "target_y_mm",
         "target_z_mm",
@@ -78,7 +87,9 @@ class TrunkInverseTrackingController(Sofa.Core.Controller):
         trunk: Any,
         target_dofs: Any,
         effector_dofs: Any,
-        config: InverseTrackingConfig,
+        config: TrackingConfig,
+        signal: TargetSignal,
+        waypoints: tuple[Point3, ...],
         run_dir: Path,
     ) -> None:
         Sofa.Core.Controller.__init__(self)
@@ -86,7 +97,8 @@ class TrunkInverseTrackingController(Sofa.Core.Controller):
         self.target_dofs = target_dofs
         self.effector_dofs = effector_dofs
         self.config = config
-        self.signal = InverseTargetSignal(config)
+        self.signal = signal
+        self.waypoints = waypoints
         self.total_steps = self.signal.total_steps()
         self.run_dir = run_dir
         self.step = 0
@@ -97,10 +109,16 @@ class TrunkInverseTrackingController(Sofa.Core.Controller):
         self.solve_times_ms: list[float] = []
         self.control_periods_ms: list[float] = []
         self.finalized = False
+        self.last_phase_key: tuple[str, int, int] | None = None
+        mode = (
+            "periodic_random_waypoints"
+            if isinstance(config, PeriodicRandomTrackingConfig)
+            else "single_target"
+        )
         print(
             "[TrunkInverse] initialized "
             f"rate={config.control_rate_hz:.1f}Hz dt={config.dt:.3f}s "
-            f"steps={self.total_steps} target={list(config.target_mm)}"
+            f"steps={self.total_steps} mode={mode} waypoints={len(waypoints)}"
         )
 
     def onAnimateBeginEvent(self, _event: Any) -> None:
@@ -118,16 +136,16 @@ class TrunkInverseTrackingController(Sofa.Core.Controller):
         self.step_started_at = now
         self.sample = self.signal.sample_step(self.step)
         self.target_dofs.position.value = [list(self.sample.position_mm)]
-        if self.step in {
-            0,
-            round(self.config.settle_duration_s / self.config.dt),
-            round(
-                (self.config.settle_duration_s + self.config.transition_duration_s)
-                / self.config.dt
-            ),
-        }:
+        phase_key = (
+            self.sample.phase,
+            self.sample.cycle_index,
+            self.sample.waypoint_index,
+        )
+        if phase_key != self.last_phase_key:
+            self.last_phase_key = phase_key
             print(
                 f"[TrunkInverse] phase={self.sample.phase} step={self.step} "
+                f"cycle={self.sample.cycle_index} waypoint={self.sample.waypoint_index} "
                 f"target={list(self.sample.position_mm)}"
             )
 
@@ -145,6 +163,8 @@ class TrunkInverseTrackingController(Sofa.Core.Controller):
             "step": self.step,
             "time_s": (self.step + 1) * self.config.dt,
             "phase": self.sample.phase,
+            "cycle_index": self.sample.cycle_index,
+            "waypoint_index": self.sample.waypoint_index,
             "target_x_mm": target[0],
             "target_y_mm": target[1],
             "target_z_mm": target[2],
@@ -194,19 +214,55 @@ class TrunkInverseTrackingController(Sofa.Core.Controller):
             self.control_periods_ms, self.config.deadline_ms, period_warmup
         )
         hold_errors = [row["error_norm_mm"] for row in self.rows if row["phase"] == "hold"]
+        tracking_summary: dict[str, Any] = {
+            "mode": (
+                "periodic_random_waypoints"
+                if isinstance(self.config, PeriodicRandomTrackingConfig)
+                else "single_target"
+            ),
+            "final_tip_mm": [self.rows[-1][f"tip_{axis}_mm"] for axis in "xyz"],
+            "final_error_norm_mm": self.rows[-1]["error_norm_mm"],
+            "hold_mean_error_norm_mm": sum(hold_errors) / len(hold_errors),
+            "hold_max_error_norm_mm": max(hold_errors),
+        }
+        if isinstance(self.config, PeriodicRandomTrackingConfig):
+            waypoint_holds = []
+            for cycle_index in range(self.config.cycle_count):
+                for waypoint_index, target in enumerate(self.waypoints):
+                    errors = [
+                        row["error_norm_mm"]
+                        for row in self.rows
+                        if row["phase"] == "hold"
+                        and row["cycle_index"] == cycle_index
+                        and row["waypoint_index"] == waypoint_index
+                    ]
+                    waypoint_holds.append(
+                        {
+                            "cycle_index": cycle_index,
+                            "waypoint_index": waypoint_index,
+                            "target_mm": list(target),
+                            "samples": len(errors),
+                            "mean_error_norm_mm": sum(errors) / len(errors),
+                            "max_error_norm_mm": max(errors),
+                        }
+                    )
+            tracking_summary.update(
+                {
+                    "random_seed": self.config.random_seed,
+                    "cycle_count": self.config.cycle_count,
+                    "waypoints_mm": [list(point) for point in self.waypoints],
+                    "waypoint_holds": waypoint_holds,
+                }
+            )
+        else:
+            tracking_summary["target_mm"] = list(self.config.target_mm)
         summary = {
             "control_rate_hz": self.config.control_rate_hz,
             "dt_s": self.config.dt,
             "completed_steps": len(self.rows),
             "solve_timing": solve_timing,
             "control_period_timing": control_period_timing,
-            "tracking": {
-                "target_mm": list(self.config.target_mm),
-                "final_tip_mm": [self.rows[-1][f"tip_{axis}_mm"] for axis in "xyz"],
-                "final_error_norm_mm": self.rows[-1]["error_norm_mm"],
-                "hold_mean_error_norm_mm": sum(hold_errors) / len(hold_errors),
-                "hold_max_error_norm_mm": max(hold_errors),
-            },
+            "tracking": tracking_summary,
         }
         with (self.run_dir / "performance.json").open("w", encoding="utf-8") as handle:
             json.dump(summary, handle, indent=2, ensure_ascii=False)
@@ -220,7 +276,7 @@ class TrunkInverseTrackingController(Sofa.Core.Controller):
 
 
 def _create_inverse_trunk(
-    root_node: Any, raw_config: dict[str, Any]
+    root_node: Any, raw_config: dict[str, Any], marker_specs: tuple[MarkerSpec, ...]
 ) -> tuple[Any, Any, Any]:
     root_node.addObject("RequiredPlugin", name="SoftRobots")
     root_node.addObject("RequiredPlugin", name="SoftRobots.Inverse")
@@ -290,27 +346,29 @@ def _create_inverse_trunk(
     crosshair_vertices, crosshair_edges = crosshair_marker_geometry(
         float(raw_config["target_crosshair_half_length_mm"])
     )
-    final_target = tuple(float(axis) for axis in raw_config["target_mm"])
-    target_visual = root_node.addChild("TargetVisualMarker")
-    diamond_visual = target_visual.addChild("Diamond")
-    diamond_visual.addObject(
-        "OglModel",
-        name="diamond",
-        position=translate_marker(marker_vertices, final_target),
-        triangles=marker_triangles,
-        edges=marker_edges,
-        color=raw_config["target_marker_color_rgba"],
-        updateNormals=False,
-    )
-    crosshair_visual = target_visual.addChild("Crosshair")
-    crosshair_visual.addObject(
-        "OglModel",
-        name="crosshair",
-        position=translate_marker(crosshair_vertices, final_target),
-        edges=crosshair_edges,
-        color=raw_config["target_crosshair_color_rgba"],
-        updateNormals=False,
-    )
+    for marker_index, (target_position, marker_color, crosshair_color) in enumerate(
+        marker_specs
+    ):
+        target_visual = root_node.addChild(f"TargetVisualMarker{marker_index}")
+        diamond_visual = target_visual.addChild("Diamond")
+        diamond_visual.addObject(
+            "OglModel",
+            name="diamond",
+            position=translate_marker(marker_vertices, target_position),
+            triangles=marker_triangles,
+            edges=marker_edges,
+            color=marker_color,
+            updateNormals=False,
+        )
+        crosshair_visual = target_visual.addChild("Crosshair")
+        crosshair_visual.addObject(
+            "OglModel",
+            name="crosshair",
+            position=translate_marker(crosshair_vertices, target_position),
+            edges=crosshair_edges,
+            color=crosshair_color,
+            updateNormals=False,
+        )
 
     effectors = trunk.node.addChild("Effectors")
     effector_dofs = effectors.addObject(
@@ -344,7 +402,32 @@ def _create_inverse_trunk(
 
 def createScene(root_node: Any) -> Any:
     raw_config, config_path = _load_config()
-    config = InverseTrackingConfig.from_mapping(raw_config)
+    if raw_config.get("tracking_mode") == "periodic_random_waypoints":
+        config: TrackingConfig = PeriodicRandomTrackingConfig.from_mapping(raw_config)
+        waypoints = generate_random_waypoints(config)
+        signal: TargetSignal = PeriodicRandomTargetSignal(config, waypoints)
+        palette = raw_config["target_marker_palette_rgba"]
+        if len(palette) < len(waypoints):
+            raise ValueError("target marker palette must cover every generated waypoint")
+        marker_specs = tuple(
+            (
+                waypoint,
+                [float(value) for value in palette[index]],
+                [float(value) for value in palette[index][:3]] + [1.0],
+            )
+            for index, waypoint in enumerate(waypoints)
+        )
+    else:
+        config = InverseTrackingConfig.from_mapping(raw_config)
+        waypoints = (config.target_mm,)
+        signal = InverseTargetSignal(config)
+        marker_specs = (
+            (
+                config.target_mm,
+                [float(value) for value in raw_config["target_marker_color_rgba"]],
+                [float(value) for value in raw_config["target_crosshair_color_rgba"]],
+            ),
+        )
     root_node.dt = config.dt
     root_node.gravity = [0.0, -9810.0, 0.0]
     run_dir = Path(
@@ -356,14 +439,30 @@ def createScene(root_node: Any) -> Any:
     with (run_dir / "config.json").open("w", encoding="utf-8") as handle:
         json.dump(raw_config, handle, indent=2, ensure_ascii=False)
         handle.write("\n")
+    if isinstance(config, PeriodicRandomTrackingConfig):
+        with (run_dir / "generated_waypoints.json").open("w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "random_seed": config.random_seed,
+                    "waypoints_mm": [list(point) for point in waypoints],
+                },
+                handle,
+                indent=2,
+                ensure_ascii=False,
+            )
+            handle.write("\n")
 
-    trunk, target_dofs, effector_dofs = _create_inverse_trunk(root_node, raw_config)
+    trunk, target_dofs, effector_dofs = _create_inverse_trunk(
+        root_node, raw_config, marker_specs
+    )
     root_node.addObject(
         TrunkInverseTrackingController(
             trunk=trunk,
             target_dofs=target_dofs,
             effector_dofs=effector_dofs,
             config=config,
+            signal=signal,
+            waypoints=waypoints,
             run_dir=run_dir,
         )
     )

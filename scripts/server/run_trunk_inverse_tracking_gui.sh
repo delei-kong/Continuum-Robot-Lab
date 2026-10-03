@@ -11,10 +11,15 @@ ACTIVE_ROOT_FILE="$SOFA_INSTALL_ROOT/ACTIVE_ROOT"
 SOFA_VALIDATION_ACTIVE_ROOT_FILE="$SOFA_VALIDATION_ROOT/ACTIVE_ROOT"
 RUN_ID="${1:-$(date -u +%Y%m%dT%H%M%SZ)_trunk_inverse_gui}"
 RUN_DIR="$PROJECT_ROOT/runs/$RUN_ID"
+STEPS="${TRUNK_INVERSE_STEPS:-200}"
 
 export DISPLAY="${DISPLAY:-:20}"
 if [[ ! "$RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "Invalid run ID." >&2
+  exit 2
+fi
+if [[ ! "$STEPS" =~ ^[1-9][0-9]*$ ]] || (( STEPS < 2 || STEPS > 5000 )); then
+  echo "TRUNK_INVERSE_STEPS must be an integer from 2 to 5000." >&2
   exit 2
 fi
 if [[ ! -f "$ACTIVE_ROOT_FILE" ]]; then
@@ -37,7 +42,7 @@ SOFA_INVERSE_LIBRARY="$SOFA_ROOT/plugins/SoftRobots.Inverse/lib/libSoftRobots.In
 SOFA_IMGUI_LIBRARY_DIR="$SOFA_ROOT/plugins/SofaImGui/lib"
 RUNSOFA="$SOFA_ROOT/bin/runSofa"
 SCENE="$PROJECT_ROOT/src/simulation/scenes/trunk_inverse_tracking.py"
-CONFIG="$PROJECT_ROOT/configs/trunk_inverse_tracking.json"
+CONFIG="${TRUNK_INVERSE_CONFIG:-$PROJECT_ROOT/configs/trunk_inverse_tracking.json}"
 display_number="${DISPLAY#:}"
 display_number="${display_number%%.*}"
 if [[ ! -S "/tmp/.X11-unix/X$display_number" ]]; then
@@ -60,14 +65,18 @@ export TRUNK_RUN_DIR="$RUN_DIR"
 
 echo "Starting the 25 Hz inverse Trunk target-tracking scene on DISPLAY=$DISPLAY"
 echo "Run ID: $RUN_ID"
-echo "Yellow fixed diamond/crosshair: final target [65, -25, 145] mm"
-echo "Green moving point: current reference; red point: mapped tip; orange line: tip trajectory"
-echo "Schedule: hold 1 s, move to [65, -25, 145] mm in 5 s, then hold 2 s"
+if [[ -n "${TRUNK_INVERSE_GUI_DESCRIPTION:-}" ]]; then
+  printf '%s\n' "$TRUNK_INVERSE_GUI_DESCRIPTION"
+else
+  echo "Yellow fixed diamond/crosshair: final target [65, -25, 145] mm"
+  echo "Green moving point: current reference; red point: mapped tip; orange line: tip trajectory"
+  echo "Schedule: hold 1 s, move to [65, -25, 145] mm in 5 s, then hold 2 s"
+fi
 
 set +e
 "$RUNSOFA" \
   -a \
-  -n 200 \
+  -n "$STEPS" \
   -l "$SOFA_VALIDATION_LIBRARY" \
   -l SofaPython3 \
   -l SoftRobots \

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
-from math import isfinite
+from math import dist, isfinite, sqrt
 from typing import Any, Mapping, Sequence
 
 
@@ -97,6 +98,8 @@ class InverseTargetSample:
     time_s: float
     position_mm: Point3
     phase: str
+    cycle_index: int = -1
+    waypoint_index: int = -1
 
 
 @dataclass(frozen=True)
@@ -176,6 +179,195 @@ class InverseTargetSignal:
             )
             return InverseTargetSample(time_s, position, "transition")  # type: ignore[arg-type]
         return InverseTargetSample(time_s, config.target_mm, "hold")
+
+    def sample_step(self, step: int) -> InverseTargetSample:
+        if isinstance(step, bool) or not isinstance(step, int) or step < 0:
+            raise ValueError("step must be a non-negative integer")
+        return self.sample(step * self.config.dt)
+
+    def total_steps(self) -> int:
+        steps = round(self.config.total_duration_s / self.config.dt)
+        if abs(steps * self.config.dt - self.config.total_duration_s) > 1e-9:
+            raise ValueError("total duration must be an integer multiple of dt")
+        return steps
+
+
+@dataclass(frozen=True)
+class PeriodicRandomTrackingConfig:
+    dt: float
+    control_rate_hz: float
+    start_target_mm: Point3
+    random_seed: int
+    waypoint_count: int
+    cycle_count: int
+    workspace_bounds_mm: tuple[tuple[float, float], ...]
+    min_start_distance_mm: float
+    min_waypoint_separation_mm: float
+    min_base_distance_mm: float
+    max_base_distance_mm: float
+    settle_duration_s: float
+    transition_duration_s: float
+    hold_duration_s: float
+    deadline_ms: float
+    benchmark_warmup_steps: int
+    max_generation_attempts: int
+
+    def __post_init__(self) -> None:
+        scalar_values = (
+            self.dt,
+            self.control_rate_hz,
+            self.min_start_distance_mm,
+            self.min_waypoint_separation_mm,
+            self.min_base_distance_mm,
+            self.max_base_distance_mm,
+            self.settle_duration_s,
+            self.transition_duration_s,
+            self.hold_duration_s,
+            self.deadline_ms,
+        )
+        if not all(isfinite(value) for value in scalar_values):
+            raise ValueError("periodic tracking configuration must contain finite values")
+        if self.dt <= 0.0 or self.control_rate_hz <= 0.0:
+            raise ValueError("dt and control_rate_hz must be positive")
+        if abs(self.dt * self.control_rate_hz - 1.0) > 1e-9:
+            raise ValueError("one simulation step must equal one control period")
+        if self.waypoint_count < 2 or self.cycle_count < 1:
+            raise ValueError("waypoint_count must be at least two and cycle_count positive")
+        if len(self.workspace_bounds_mm) != 3 or any(
+            len(bounds) != 2 or not all(isfinite(value) for value in bounds)
+            or bounds[0] >= bounds[1]
+            for bounds in self.workspace_bounds_mm
+        ):
+            raise ValueError("workspace bounds must contain three increasing finite ranges")
+        if self.min_start_distance_mm <= 0.0 or self.min_waypoint_separation_mm <= 0.0:
+            raise ValueError("waypoint distance constraints must be positive")
+        if self.min_base_distance_mm <= 0.0 or (
+            self.max_base_distance_mm <= self.min_base_distance_mm
+        ):
+            raise ValueError("base distance range must be positive and increasing")
+        if self.settle_duration_s < 0.0:
+            raise ValueError("settle duration must be non-negative")
+        if self.transition_duration_s <= 0.0 or self.hold_duration_s <= 0.0:
+            raise ValueError("transition and hold durations must be positive")
+        if self.deadline_ms <= 0.0:
+            raise ValueError("deadline_ms must be positive")
+        integer_values = (
+            self.random_seed,
+            self.waypoint_count,
+            self.cycle_count,
+            self.benchmark_warmup_steps,
+            self.max_generation_attempts,
+        )
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in integer_values):
+            raise ValueError("seed, counts, warmup, and attempts must be integers")
+        if self.benchmark_warmup_steps < 0 or self.max_generation_attempts < 1:
+            raise ValueError("warmup must be non-negative and attempts positive")
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, Any]) -> "PeriodicRandomTrackingConfig":
+        raw_bounds = values["workspace_bounds_mm"]
+        if not isinstance(raw_bounds, Mapping):
+            raise ValueError("workspace_bounds_mm must be a mapping")
+        bounds = tuple(
+            tuple(float(value) for value in raw_bounds[axis]) for axis in ("x", "y", "z")
+        )
+        return cls(
+            dt=float(values["dt"]),
+            control_rate_hz=float(values["control_rate_hz"]),
+            start_target_mm=_point3(values["start_target_mm"], "start_target_mm"),
+            random_seed=int(values["random_seed"]),
+            waypoint_count=int(values["waypoint_count"]),
+            cycle_count=int(values["cycle_count"]),
+            workspace_bounds_mm=bounds,
+            min_start_distance_mm=float(values["min_start_distance_mm"]),
+            min_waypoint_separation_mm=float(values["min_waypoint_separation_mm"]),
+            min_base_distance_mm=float(values["min_base_distance_mm"]),
+            max_base_distance_mm=float(values["max_base_distance_mm"]),
+            settle_duration_s=float(values["settle_duration_s"]),
+            transition_duration_s=float(values["transition_duration_s"]),
+            hold_duration_s=float(values["hold_duration_s"]),
+            deadline_ms=float(values["deadline_ms"]),
+            benchmark_warmup_steps=int(values["benchmark_warmup_steps"]),
+            max_generation_attempts=int(values.get("max_generation_attempts", 10000)),
+        )
+
+    @property
+    def total_duration_s(self) -> float:
+        segment_duration = self.transition_duration_s + self.hold_duration_s
+        return self.settle_duration_s + self.cycle_count * self.waypoint_count * segment_duration
+
+
+def generate_random_waypoints(config: PeriodicRandomTrackingConfig) -> tuple[Point3, ...]:
+    """Generate a deterministic, spatially separated waypoint set inside safe bounds."""
+
+    generator = random.Random(config.random_seed)
+    waypoints: list[Point3] = []
+    for _attempt in range(config.max_generation_attempts):
+        candidate = tuple(
+            generator.uniform(lower, upper)
+            for lower, upper in config.workspace_bounds_mm
+        )
+        base_distance = sqrt(sum(axis * axis for axis in candidate))
+        if not config.min_base_distance_mm <= base_distance <= config.max_base_distance_mm:
+            continue
+        if dist(candidate, config.start_target_mm) < config.min_start_distance_mm:
+            continue
+        if any(dist(candidate, waypoint) < config.min_waypoint_separation_mm for waypoint in waypoints):
+            continue
+        waypoints.append(candidate)  # type: ignore[arg-type]
+        if len(waypoints) == config.waypoint_count:
+            return tuple(waypoints)
+    raise ValueError(
+        "unable to generate enough separated waypoints within max_generation_attempts"
+    )
+
+
+class PeriodicRandomTargetSignal:
+    """Visit a reproducible random waypoint set repeatedly with linear transitions."""
+
+    def __init__(
+        self, config: PeriodicRandomTrackingConfig, waypoints: Sequence[Point3]
+    ) -> None:
+        if len(waypoints) != config.waypoint_count:
+            raise ValueError("waypoint count does not match periodic tracking configuration")
+        self.config = config
+        self.waypoints = tuple(_point3(point, "waypoint") for point in waypoints)
+
+    def sample(self, time_s: float) -> InverseTargetSample:
+        if not isfinite(time_s) or time_s < 0.0:
+            raise ValueError("time_s must be finite and non-negative")
+        config = self.config
+        if time_s < config.settle_duration_s:
+            return InverseTargetSample(time_s, config.start_target_mm, "settle")
+
+        segment_duration = config.transition_duration_s + config.hold_duration_s
+        elapsed = time_s - config.settle_duration_s
+        segment_index = min(
+            int(elapsed / segment_duration),
+            config.cycle_count * config.waypoint_count - 1,
+        )
+        cycle_index, waypoint_index = divmod(segment_index, config.waypoint_count)
+        local_time = elapsed - segment_index * segment_duration
+        target = self.waypoints[waypoint_index]
+        if segment_index == 0:
+            source = config.start_target_mm
+        else:
+            source = self.waypoints[(waypoint_index - 1) % config.waypoint_count]
+        if local_time < config.transition_duration_s:
+            alpha = local_time / config.transition_duration_s
+            position = tuple(
+                start + alpha * (goal - start) for start, goal in zip(source, target)
+            )
+            return InverseTargetSample(
+                time_s,
+                position,  # type: ignore[arg-type]
+                "transition",
+                cycle_index,
+                waypoint_index,
+            )
+        return InverseTargetSample(
+            time_s, target, "hold", cycle_index, waypoint_index
+        )
 
     def sample_step(self, step: int) -> InverseTargetSample:
         if isinstance(step, bool) or not isinstance(step, int) or step < 0:

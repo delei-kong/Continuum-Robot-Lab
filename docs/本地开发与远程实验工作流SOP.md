@@ -1,6 +1,6 @@
 # 本地开发与远程实验工作流 SOP
 
-> 版本：V1.13（2026-10-03）
+> 版本：V1.14（2026-10-03）
 > 适用范围：本地 Mac 开发 + 远程 Linux GPU 工作站实验
 > 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、25 Hz 逆向点位跟踪、末端轨迹和实时控制曲线已验证
 
@@ -81,10 +81,12 @@ scripts/remote/sync_workspace.sh
 | 官方 SoftRobots Trunk demo | `scripts/remote/run_sofa_trunk_demo.sh <run_id>` |
 | 项目 Trunk 单绳周期控制 | `scripts/remote/run_trunk_cycle.sh <run_id>` |
 | 项目 Trunk 25 Hz 逆向点位跟踪 | `scripts/remote/run_trunk_inverse_tracking.sh <run_id>` |
+| 项目 Trunk 25 Hz 周期随机多目标跟踪 | `scripts/remote/run_trunk_inverse_periodic_random.sh <run_id>` |
 | 远端桌面 SOFA 可视化 demo | `scripts/server/run_sofa_gui_demo.sh`（在远端终端执行） |
 | 远端桌面 Trunk 可视化 | `scripts/server/run_sofa_trunk_gui.sh`（在远端终端执行） |
 | 远端桌面 Trunk 周期控制 | `scripts/server/run_trunk_cycle_gui.sh [run_id]`（在远端终端执行） |
 | 远端桌面 Trunk 逆向点位跟踪 | `scripts/server/run_trunk_inverse_tracking_gui.sh [run_id]`（在远端终端执行） |
+| 远端桌面 Trunk 周期随机多目标跟踪 | `scripts/server/run_trunk_inverse_periodic_random_gui.sh [run_id]`（在远端终端执行） |
 
 PyTorch 冒烟任务由 `tmux` 后台运行；当前 SOFA demo 是带超时限制的同步短任务。正式长任务必须使用 `tmux` 或调度器，不能依赖 SSH 会话存活。
 
@@ -121,8 +123,19 @@ bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_
 bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_inverse_tracking_gui.sh
 ```
 
-蓝色模型为 Trunk，绿色点为目标，红色点为映射末端，橙色线为末端历史轨迹。场景在
-初始目标保持 1 秒，用 2 秒移动至 `[20, -5, 180] mm`，再固定保持 5 秒。
+蓝色模型为 Trunk，黄色固定标记为最终目标，绿色点为当前参考，红色点为映射末端，
+橙色线为末端历史轨迹。场景在初始目标保持 1 秒，用 5 秒移动至
+`[65, -25, 145] mm`，再固定保持 2 秒。
+
+观察周期随机多目标跟踪场景：
+
+```bash
+bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_inverse_periodic_random_gui.sh [run_id]
+```
+
+场景使用固定种子生成三个受约束随机目标，并依次循环两轮。黄色、品红和青色固定标记
+分别表示 P0、P1 和 P2；每段用 5 秒移动并保持 1 秒。实际点位写入运行目录中的
+`generated_waypoints.json`，控制与误差记录写入 `trajectory.csv` 和 `performance.json`。
 
 只检查 X11、OpenGL、RTX 4090 渲染和 SOFA 路径，不打开窗口：
 
@@ -265,6 +278,7 @@ scripts/remote/authorize_ssh_key.sh
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| V1.14 | 2026-10-03 | 增加 25 Hz 周期随机多目标跟踪的 batch 与 GUI 工作流 |
 | V1.13 | 2026-10-03 | 增加人工可视化验收门禁，用户确认后方可进入下一阶段 |
 | V1.12 | 2026-10-02 | 增加 Trunk 25 Hz 官方逆向点位跟踪、性能统计与 GUI 入口 |
 | V1.11 | 2026-10-02 | 修复同步监控停止信号与 SSH 半开连接检测 |
