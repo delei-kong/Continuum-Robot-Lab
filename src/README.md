@@ -15,3 +15,13 @@
 `simulation/scenes/trunk_trajectory_tracking.py` 将上述合同适配到官方 SoftRobots 逆向
 QP 场景；`evaluation/tracking_metrics.py` 在仿真结束后统一写出 `trajectory.csv` 和
 `performance.json`。控制循环只记录内存数据，不通过 CSV 驱动实时控制或绘图。
+
+远端批处理可通过 `scripts/remote/run_trunk_trajectory_tracking.py` 选择已注册的轨迹和
+控制器；该入口既可在本地 Mac 发起 SSH 任务，也可在远端工作区直接调用 SOFA batch。未带
+参数时默认运行 `line + reference_goal`，输出名称自动使用 UTC 时间戳。
+
+当前注册轨迹包括 `line`、`ellipse`、`circle`、`rounded_triangle` 和
+`rounded_square`。圆角三角形与圆角正方形由闭合 Catmull–Rom 曲线生成，在控制点处保持
+位置和速度连续；它们使用等时分段，不承诺严格恒定弧长速度。
+
+在远端 XFCE 桌面中增加 `--gui` 即打开可视化窗口；不带该选项时只运行 batch 并生成结果包。

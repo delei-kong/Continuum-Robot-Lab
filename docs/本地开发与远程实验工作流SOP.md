@@ -1,8 +1,8 @@
 # 本地开发与远程实验工作流 SOP
 
-> 版本：V1.16（2026-10-03）
+> 版本：V1.17（2026-10-03）
 > 适用范围：本地 Mac 开发 + 远程 Linux GPU 工作站实验
-> 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、25 Hz 逆向点位跟踪、末端轨迹和实时控制曲线已验证；通用轨迹评估 Pipeline 的直线与闭合椭圆轨迹均已通过自动和人工可视化验收
+> 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、25 Hz 逆向点位跟踪、末端轨迹和实时控制曲线已验证；通用轨迹评估 Pipeline 的直线、椭圆、圆形、圆角三角形和圆角正方形均已通过自动和人工可视化验收
 
 ## 1. 核心原则
 
@@ -84,6 +84,7 @@ scripts/remote/sync_workspace.sh
 | 项目 Trunk 25 Hz 周期随机多目标跟踪 | `scripts/remote/run_trunk_inverse_periodic_random.sh <run_id>` |
 | 项目 Trunk 25 Hz 直线轨迹评估 Pipeline | `scripts/remote/run_trunk_trajectory_tracking.sh <run_id>` |
 | 项目 Trunk 25 Hz 椭圆轨迹评估 Pipeline | `scripts/remote/run_trunk_trajectory_tracking_ellipse.sh <run_id>` |
+| 参数化 Trunk 轨迹评估入口 | `python scripts/remote/run_trunk_trajectory_tracking.py <trajectory> <controller> <run_id>` |
 | 远端桌面 SOFA 可视化 demo | `scripts/server/run_sofa_gui_demo.sh`（在远端终端执行） |
 | 远端桌面 Trunk 可视化 | `scripts/server/run_sofa_trunk_gui.sh`（在远端终端执行） |
 | 远端桌面 Trunk 周期控制 | `scripts/server/run_trunk_cycle_gui.sh [run_id]`（在远端终端执行） |
@@ -203,6 +204,35 @@ Trunk 25 Hz 轨迹评估 Pipeline：
 scripts/remote/fetch_trunk_trajectory_tracking.sh <run_id>
 ```
 
+参数化批处理入口可在本地或远端工作区直接执行，当前注册了 `line`/`timed_linear`、
+`ellipse`/`periodic_ellipse`、`circle`、`rounded_triangle`/`triangle` 和
+`rounded_square`/`square`，以及 `reference_goal`（也可写作 `reference`）控制器。省略参数时默认使用
+`line + reference_goal`，输出名称自动生成。例如：
+
+```bash
+# 默认直线轨迹、默认控制器、自动输出名称
+python scripts/remote/run_trunk_trajectory_tracking.py
+
+# 只切换轨迹，控制器和输出名称仍使用默认值
+python scripts/remote/run_trunk_trajectory_tracking.py ellipse
+
+# 显式指定全部参数
+python scripts/remote/run_trunk_trajectory_tracking.py \
+  ellipse reference_goal 20261003_ellipse_reference_cli_v1
+
+# 在远端 XFCE 桌面打开同一实验的可视化窗口
+python scripts/remote/run_trunk_trajectory_tracking.py \
+  ellipse reference_goal 20261003_ellipse_reference_gui_v1 --gui
+
+# 查看所有已经注册的组合
+python scripts/remote/run_trunk_trajectory_tracking.py --list
+```
+
+输出名称只允许字母、数字、点、下划线和短横线，并直接作为远端 `run_id`；配置、场景和
+步数由注册表选择，不接受任意本地路径。不带 `--gui` 时为无窗口 batch；带 `--gui` 时
+必须在远端 XFCE 工作区执行并打开 SOFA 窗口。新增控制器或轨迹时，先在注册表中增加明确
+组合，再补充相应配置和测试。
+
 验收通过后，结果分别位于：
 
 - `outputs/remote_smoke/<run_id>/`
@@ -271,6 +301,7 @@ scripts/remote/fetch_trunk_trajectory_tracking.sh <run_id>
 SoftRobots Trunk 模型的单绳周期控制、末端轨迹显示、控制量内存实时绘图、单目标与
 周期随机多目标跟踪。通用轨迹、控制器、SOFA 后端、内存记录器和离线指标已通过标准
 接口组合；定时直线和闭合椭圆轨迹均已通过远端自动验证和人工可视化验收。
+圆形、圆角三角形和圆角正方形已接入相同入口，并通过远端 batch 与人工可视化验收。
 组件职责、时间语义、配置约定、标准产物和扩展规则见
 [轨迹跟踪实验 Pipeline 设计](./discuss/轨迹跟踪实验Pipeline设计.md)。
 
@@ -314,6 +345,9 @@ scripts/remote/authorize_ssh_key.sh
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| V1.17 | 2026-10-03 | 参数化入口新增圆形、圆角三角形和圆角正方形，并完成 batch 与 GUI 验收 |
+| V1.16 | 2026-10-03 | 增加轨迹与控制器参数化单实验入口及默认参数 |
+| V1.15 | 2026-10-03 | 增加通用轨迹跟踪 Pipeline、定时直线与三维闭合椭圆验收流程 |
 | V1.14 | 2026-10-03 | 增加 25 Hz 周期随机多目标跟踪的 batch 与 GUI 工作流 |
 | V1.13 | 2026-10-03 | 增加人工可视化验收门禁，用户确认后方可进入下一阶段 |
 | V1.12 | 2026-10-02 | 增加 Trunk 25 Hz 官方逆向点位跟踪、性能统计与 GUI 入口 |

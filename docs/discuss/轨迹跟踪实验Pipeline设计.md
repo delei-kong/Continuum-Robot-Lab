@@ -1,7 +1,7 @@
 # 轨迹跟踪实验 Pipeline 设计
 
 > 日期：2026-10-03
-> 状态：V1 基线完成；直线与三维闭合椭圆已通过自动和人工可视化验收
+> 状态：V1 基线完成；直线、椭圆、圆形、圆角三角形和圆角正方形均已验收
 
 ## 1. 目标与边界
 
@@ -33,7 +33,7 @@ V1 中的具体组合：
 
 | 角色 | 当前实现 | 配置类型 |
 |---|---|---|
-| 轨迹 | 定时直线、三维周期椭圆 | `timed_linear`、`periodic_ellipse` |
+| 轨迹 | 定时直线、三维周期椭圆/圆形、闭合圆角多边形 | `timed_linear`、`periodic_ellipse`、`periodic_catmull_rom` |
 | 控制器 | 将参考位置转换为任务空间目标 | `reference_goal` |
 | 后端 | SOFA Trunk + 官方逆向 QP | `sofa_inverse_qp` |
 | 记录器 | 控制循环内存记录 | `InMemoryTrackingRecorder` |
@@ -129,13 +129,21 @@ SOFA 场景在 `AnimateBegin` 写目标，在 `AnimateEnd` 读取实际末端。
 |---|---:|---:|---:|---|
 | 1 s 稳定 + 5 s 直线 + 2 s 保持 | 0.02284 mm | 0.07661 mm | 29.529 ms | 通过 |
 | 1 s 稳定 + 12 s 三维椭圆 + 1 s 保持 | 0.04376 mm | 0.09425 mm | 31.800 ms | 通过 |
+| 1 s 稳定 + 12 s 三维圆形 + 1 s 保持 | 0.05049 mm | 0.09556 mm | 31.052 ms | 通过 |
+| 1 s 稳定 + 12 s 圆角三角形 + 1 s 保持 | 0.04114 mm | 0.09269 mm | 32.068 ms | 通过 |
+| 1 s 稳定 + 12 s 圆角正方形 + 1 s 保持 | 0.04174 mm | 0.09291 mm | 34.029 ms | 通过 |
 
 数值结果用于验证官方逆向 QP 基线和评估链路，不应直接解释为尚未实现的 PID 控制精度。
+圆角三角形和圆角正方形 batch 各出现 1 次超过 40 ms 的控制周期，但 P99 均满足 40 ms
+门限；保留该偶发抖动，待重复实验时继续观察。
 
 ## 8. 扩展规则
 
 新增轨迹时：实现 `Trajectory`，注册到 `trajectory_from_mapping`，提供解析参考和阶段名称，
 先通过纯 Python 时间边界测试，再进行远端 batch 与人工 GUI 验收。
+
+闭合圆角多边形采用 uniform Catmull–Rom 插值，按控制点分段等时推进；曲线在控制点处位置
+和速度连续，但当前版本没有做弧长重参数化，因此不能将其速度解释为严格恒定切向速度。
 
 新增控制器时：实现 `TrackingController`，明确支持的 `ControlCommand` 类型，在工厂中注册，
 并使用同一轨迹、seed、dt 和指标与基线比较。
@@ -148,3 +156,18 @@ SOFA 场景在 `AnimateBegin` 写目标，在 `AnimateEnd` 读取实际末端。
 下一阶段只增加批量实验能力：使用显式实验矩阵组合配置、为每个 case 生成独立 run 目录，
 失败 case 不覆盖其他结果，最后输出聚合表。批量入口稳定并完成自动验证后，再开始 PID
 控制器，以避免同时调试控制算法和实验调度器。
+
+当前已提供第一版单 case 参数化入口：
+
+```bash
+python scripts/remote/run_trunk_trajectory_tracking.py \
+  <trajectory> <controller> <run_id>
+```
+
+省略参数时默认使用 `line + reference_goal`，并生成带 UTC 时间戳的 run ID；只提供第一个
+参数时可以在 `line`、`ellipse`、`circle`、`rounded_triangle` 和 `rounded_square` 之间
+切换。`triangle` 与 `square` 是两个圆角轨迹名称的短别名。入口通过安全注册表映射到固定
+配置，不允许用户参数直接构造远端路径；完整实验矩阵和结果聚合仍属于下一阶段。
+
+默认入口是 batch 模式；在远端 XFCE 工作区追加 `--gui` 可以复用同一注册表打开对应的
+SOFA 可视化场景。batch 与 GUI 使用同一配置和控制循环，区别只在运行显示方式。
