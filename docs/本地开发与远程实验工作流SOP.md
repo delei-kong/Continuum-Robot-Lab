@@ -86,6 +86,8 @@ scripts/remote/sync_workspace.sh
 | 远端桌面 Trunk 可视化 | `scripts/server/run_sofa_trunk_gui.sh`（在远端终端执行） |
 | 远端桌面 Trunk 周期控制 | `scripts/server/run_trunk_cycle_gui.sh [run_id]`（在远端终端执行） |
 | 统一 Trunk tracking GUI | `python scripts/experiment/run_tracking.py --input <preset> --algorithm reference_goal --output <run_id> --mode gui --target server`（在远端终端执行） |
+| Koopman 正向数据 batch | `python scripts/experiment/run_forward_data.py --batch <registered_batch> --output <batch_id>` |
+| Koopman 数据集审计 | `python scripts/experiment/audit_koopman_dataset.py --dataset koopman_v1 --train-batch <id> --validation-batch <id> --test-batch <id> --output <id>` |
 
 PyTorch 冒烟任务由 `tmux` 后台运行；当前 SOFA demo 是带超时限制的同步短任务。正式长任务必须使用 `tmux` 或调度器，不能依赖 SSH 会话存活。
 
@@ -316,37 +318,69 @@ SoftRobots Trunk 模型的单绳周期控制、末端轨迹显示、控制量内
 组件职责、时间语义、配置约定、标准产物和扩展规则见
 [轨迹跟踪实验 Pipeline 设计](./discuss/轨迹跟踪实验Pipeline设计.md)。
 
-下一步按以下顺序推进：
+后续按以下顺序推进：
 
-1. 建立多绳正向控制、状态观测和数据生成闭环。
-2. 生成用于 Koopman 建模的动力学数据集，并完成数据质量审计。
-3. 完成 Koopman 多步预测评价后，再开展模型强化学习与复杂轨迹控制。
+1. 生成用于 Koopman 建模的动力学数据集，并完成数据质量审计。
+2. 完成 Koopman 多步预测评价后，再开展模型强化学习与复杂轨迹控制。
 
 已完成验证的数据和已知问题见[远程工作流验收记录](./远程工作流验收记录.md)。
 
-### 正向多绳数据采集 M1 验收
+### 正向多绳数据采集 M1 验收（已完成）
 
 首个固定 seed 多正弦 pilot 已在 batch 模式完成两次一致性复验：每次 1000 步，包含 8 绳实际指令、
 绳索位移与力、末端位置、10 个中心线采样点的位置与速度；两份 `episode.csv` 的 SHA-256 一致。
 
-M1 的 GUI 人工验收须在远端 XFCE 工作区运行：
+GUI 人工验收已在远端 XFCE 工作区完成：
 
 ```bash
 cd /root/gpufree-share/Continuum-Robot-Lab/workspace
 python scripts/experiment/run_forward_data.py \
   --input multisine_pilot \
-  --output 20261005_trunk_forward_multisine_gui_m1_v1 \
+  --output 20261005_trunk_forward_multisine_gui_m1_v2 \
   --mode gui --target server
 ```
 
-预期现象：Trunk 在约 1 秒静置后受多绳激励连续产生空间形变，红色末端点平滑移动；无明显跳变、
-无界发散、异常穿越或窗口/终端报错。等待命令返回 `experiment_status=complete`，随后从本地回传：
+用户已确认：Trunk 在约 1 秒静置后受多绳激励连续产生空间形变，红色末端点平滑移动；无明显跳变、
+无界发散、异常穿越或窗口/终端报错。该运行返回 `experiment_status=complete`，并已从本地回传：
 
 ```bash
-scripts/remote/fetch_run.sh trunk_forward_data 20261005_trunk_forward_multisine_gui_m1_v1
+scripts/remote/fetch_run.sh trunk_forward_data 20261005_trunk_forward_multisine_gui_m1_v2
 ```
 
-用户确认视觉现象且回传结果含 `COMPLETE`、`exit_code=0`、1000 行 `episode.csv` 后，M1 才可标记完成。
+回传结果含 `COMPLETE`、`exit_code=0`、1000 行 `episode.csv`、92 列记录且无非有限数值；M1 已标记完成。
+
+### Koopman v1 正式数据集 M2
+
+M2 使用 `koopman_v1_train`、`koopman_v1_validation` 和 `koopman_v1_test` 三个固定 batch，分别生成
+4、2、2 个 2000 步 episode。输入、seed、激励幅值和频率均由本地配置与受控注册表决定：
+
+逐 episode 的 `trunk_forward_koopman_v1_*.json` 仅保存在本地并由 Git 忽略；
+`scripts/remote/sync.include` 显式将它们纳入受保护源码同步，远端不应手工修改这些文件。
+
+```bash
+python scripts/experiment/run_forward_data.py \
+  --batch koopman_v1_train --output <train_batch_id>
+python scripts/experiment/run_forward_data.py \
+  --batch koopman_v1_validation --output <validation_batch_id>
+python scripts/experiment/run_forward_data.py \
+  --batch koopman_v1_test --output <test_batch_id>
+```
+
+每个 batch 成功后，按其 `summary.json` 中的 run ID 使用 `fetch_run.sh trunk_forward_data <run_id>` 回传全部
+episode；然后运行：
+
+```bash
+python scripts/experiment/audit_koopman_dataset.py \
+  --dataset koopman_v1 \
+  --train-batch <train_batch_id> \
+  --validation-batch <validation_batch_id> \
+  --test-batch <test_batch_id> \
+  --output <dataset_audit_id>
+```
+
+仅当 `outputs/koopman_datasets/<dataset_audit_id>/audit.json` 显示通过时，才允许将该数据集用于 Koopman
+拟合。详细的状态/动作选择、时序对齐和质量条件见
+[Koopman 数据集设计与质量审计](./discuss/Koopman数据集设计与质量审计.md)。
 
 ## 6. 故障处理
 

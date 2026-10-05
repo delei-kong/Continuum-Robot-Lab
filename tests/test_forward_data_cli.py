@@ -1,3 +1,5 @@
+import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -5,7 +7,9 @@ from unittest.mock import patch
 from experiment import forward_data_cli
 from experiment.forward_data_cli import (
     build_forward_data_manifest,
+    resolve_forward_data_batch,
     resolve_forward_data_spec,
+    run_forward_data_batch,
     run_forward_data_experiment,
 )
 
@@ -22,6 +26,16 @@ class ForwardDataCliTest(unittest.TestCase):
         self.assertEqual(manifest.pipeline_id, "trunk_forward_data")
         self.assertEqual(manifest.artifact_profile, "trunk_forward_data")
         self.assertEqual(manifest.algorithm_id, "direct_multisine")
+
+    def test_koopman_dataset_preset_and_batch_are_registered(self) -> None:
+        spec = resolve_forward_data_spec("koopman_v1_train_low", PROJECT_ROOT)
+        self.assertEqual(spec.steps, 2000)
+        self.assertEqual(
+            spec.config_rel, "configs/trunk_forward_koopman_v1_train_low.json"
+        )
+        batch = resolve_forward_data_batch("koopman_v1_train", PROJECT_ROOT)
+        self.assertEqual(len(batch), 4)
+        self.assertTrue(all(spec.steps == 2000 for spec in batch))
 
     def test_unknown_input_and_unsafe_run_id_are_rejected(self) -> None:
         with self.assertRaises(ValueError):
@@ -58,6 +72,24 @@ class ForwardDataCliTest(unittest.TestCase):
         self.assertTrue(command[1].endswith("scripts/server/run_experiment.sh"))
         manifest = run.call_args.kwargs["env"]["EXPERIMENT_RUN_MANIFEST"]
         self.assertIn('"pipeline_id": "trunk_forward_data"', manifest)
+
+    @patch("experiment.forward_data_cli.run_forward_data_experiment")
+    def test_batch_records_each_case_and_continues_after_failure(self, run) -> None:
+        run.side_effect = (0, 1, 0, 0)
+        with tempfile.TemporaryDirectory() as temporary:
+            result = run_forward_data_batch(
+                PROJECT_ROOT,
+                "koopman_v1_train",
+                "koopman_batch_v1",
+                target="server",
+                results_root=Path(temporary),
+            )
+            summary_path = Path(temporary) / "koopman_batch_v1" / "summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        self.assertEqual(result, 1)
+        self.assertEqual(run.call_count, 4)
+        self.assertEqual(summary["succeeded"], 3)
+        self.assertEqual(summary["failed"], 1)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOCAL_CONFIG="$SCRIPT_DIR/config.local.sh"
+SYNC_INCLUDE_FILE="$SCRIPT_DIR/sync.include"
 
 if [[ ! -f "$LOCAL_CONFIG" ]]; then
   echo "Missing $LOCAL_CONFIG. Copy config.example.sh and fill in the workstation details." >&2
@@ -73,8 +74,27 @@ build_source_manifest() {
     fi
     file_hash="$(LC_ALL=C shasum -a 256 "$PROJECT_ROOT/$normalized_file" | awk '{print $1}')"
     printf '%s  %s\n' "$file_hash" "$normalized_file" >>"$temporary_file"
-  done < <(git -C "$PROJECT_ROOT" ls-files -co --exclude-standard -z)
+  done < <(
+    git -C "$PROJECT_ROOT" ls-files -co --exclude-standard -z
+    if [[ -f "$SYNC_INCLUDE_FILE" ]]; then
+      local include_pattern candidate relative_candidate
+      while IFS= read -r include_pattern || [[ -n "$include_pattern" ]]; do
+        [[ -z "$include_pattern" || "$include_pattern" == \#* ]] && continue
+        if [[ "$include_pattern" == /* || "$include_pattern" == *..* ]]; then
+          echo "Unsafe sync include pattern: $include_pattern" >&2
+          return 3
+        fi
+        shopt -s nullglob
+        for candidate in "$PROJECT_ROOT"/$include_pattern; do
+          [[ -f "$candidate" ]] || continue
+          relative_candidate="${candidate#"$PROJECT_ROOT/"}"
+          printf '%s\0' "$relative_candidate"
+        done
+        shopt -u nullglob
+      done <"$SYNC_INCLUDE_FILE"
+    fi
+  )
 
-  LC_ALL=C sort "$temporary_file" >"$output_file"
+  LC_ALL=C sort -u "$temporary_file" >"$output_file"
   rm -f "$temporary_file"
 }

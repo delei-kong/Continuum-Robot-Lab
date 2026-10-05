@@ -13,3 +13,6 @@
 
 `test_forward_data.py` 验证正向数据采集的动作限幅与速率限制、固定 seed 多绳激励、时间语义和配置边界，
 不依赖 SOFA。
+
+`test_koopman_dataset.py` 验证 Koopman 数据集的 episode 时序、状态—动作—下一状态对齐、数值质量、
+动作覆盖和 train/validation/test 内容隔离；同样不依赖 SOFA。

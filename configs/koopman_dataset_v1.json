@@ -1,0 +1,17 @@
+{
+  "dataset_id": "koopman_v1",
+  "dt_s": 0.01,
+  "required_batches": {
+    "train": "koopman_v1_train",
+    "validation": "koopman_v1_validation",
+    "test": "koopman_v1_test"
+  },
+  "quality_policy": {
+    "min_rows_per_episode": 2000,
+    "min_action_span_mm": 1.0,
+    "max_limited_command_fraction": 0.05
+  },
+  "state_contract": "79 dimensions: cable displacement/force, tip position, and ten centerline positions/velocities",
+  "action_contract": "8 dimensions: applied cable commands in mm",
+  "transition_contract": "(state[t-1], action[t], state[t]) within one episode only"
+}

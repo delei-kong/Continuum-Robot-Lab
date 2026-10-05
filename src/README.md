@@ -47,3 +47,8 @@ Koopman 阶段的正向数据采集由 `simulation/forward_data.py` 定义无 SO
 python scripts/experiment/run_forward_data.py \
   --input multisine_pilot --output <run_id> --mode batch
 ```
+
+正式 `koopman_v1` 数据集通过 `--batch koopman_v1_train|koopman_v1_validation|koopman_v1_test`
+选择固定的 episode 矩阵。`modeling/koopman_dataset.py` 定义 79 维状态、8 维动作、episode 内时序对齐和
+质量审计；`scripts/experiment/audit_koopman_dataset.py` 只从已回传的受控 batch 组装数据集，不接受任意
+CSV 路径。

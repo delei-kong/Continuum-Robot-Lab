@@ -2,6 +2,9 @@
 .remote/
 scripts/remote/config.local.sh
 
+# Local Koopman episode parameters; keep them beside the registry but do not commit them.
+configs/trunk_forward_koopman_v1_*.json
+
 # Research datasets and generated outputs
 datasets/*
 !datasets/README.md
