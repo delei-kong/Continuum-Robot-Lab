@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from control.pid_controller import TaskSpacePIDController
 from control.tracking_contracts import (
     ControllerContext,
     ControllerOutput,
@@ -46,8 +47,12 @@ class ReferenceGoalController:
         self._dt_s = 0.0
 
 
-def controller_from_mapping(values: Mapping[str, Any]) -> ReferenceGoalController:
+def controller_from_mapping(
+    values: Mapping[str, Any],
+) -> ReferenceGoalController | TaskSpacePIDController:
     controller_type = values.get("type")
-    if controller_type != "reference_goal":
-        raise ValueError(f"unsupported tracking controller type: {controller_type!r}")
-    return ReferenceGoalController()
+    if controller_type == "reference_goal":
+        return ReferenceGoalController()
+    if controller_type == "task_space_pid":
+        return TaskSpacePIDController.from_mapping(values)
+    raise ValueError(f"unsupported tracking controller type: {controller_type!r}")

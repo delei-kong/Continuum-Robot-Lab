@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "tracking_mode": "trajectory_benchmark",
+  "dt": 0.04,
+  "control_rate_hz": 25.0,
+  "duration_s": 8.0,
+  "seed": 20261003,
+  "deadline_ms": 40.0,
+  "benchmark_warmup_steps": 25,
+  "start_target_mm": [0.0, -5.0, 185.0],
+  "trajectory": {
+    "type": "timed_linear",
+    "start_mm": [0.0, -5.0, 185.0],
+    "end_mm": [65.0, -25.0, 145.0],
+    "settle_duration_s": 1.0,
+    "transition_duration_s": 5.0,
+    "hold_duration_s": 2.0
+  },
+  "controller": {
+    "type": "task_space_pid",
+    "kp": [0.02, 0.02, 0.02],
+    "ki": [0.0, 0.0, 0.0],
+    "kd": [0.0, 0.0, 0.0],
+    "integral_limit_mm_s": [20.0, 20.0, 20.0],
+    "max_correction_mm": 2.0
+  },
+  "backend": {"type": "sofa_inverse_qp"},
+  "qp_epsilon": 0.001,
+  "target_marker_radius_mm": 2.5,
+  "target_crosshair_half_length_mm": 4.0,
+  "target_marker_color_rgba": [1.0, 0.8, 0.05, 0.35],
+  "target_crosshair_color_rgba": [1.0, 1.0, 0.1, 1.0],
+  "trajectory_precision_s": 0.04,
+  "trajectory_color_rgba": [1.0, 0.45, 0.0, 1.0],
+  "trajectory_size_factor": 4.5,
+  "reference_marker_scale_mm": 3.0,
+  "tip_marker_scale_mm": 4.0,
+  "reference_path_samples": 201,
+  "reference_path_radius_mm": 0.75,
+  "reference_path_radial_segments": 8,
+  "reference_path_color_rgba": [0.15, 1.0, 0.3, 0.4]
+}
