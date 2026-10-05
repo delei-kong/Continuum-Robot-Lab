@@ -25,8 +25,13 @@ class TrajectoryCliTest(unittest.TestCase):
         line = resolve_run_spec("line", "reference")
         ellipse = resolve_run_spec("periodic_ellipse", "reference_goal")
         circle = resolve_run_spec("circle", "reference_goal")
+        circle_pid = resolve_run_spec("circle", "pid")
+        line_pid = resolve_run_spec("line", "pid")
+        ellipse_pid = resolve_run_spec("ellipse", "task_space_pid")
         triangle = resolve_run_spec("triangle", "reference_goal")
         square = resolve_run_spec("rounded_square", "reference_goal")
+        triangle_pid = resolve_run_spec("triangle", "pid")
+        square_pid = resolve_run_spec("square", "pid")
         single_target = resolve_tracking_spec(
             "target", "reference_goal", PROJECT_ROOT
         )
@@ -38,15 +43,33 @@ class TrajectoryCliTest(unittest.TestCase):
         self.assertEqual(ellipse.trajectory, "ellipse")
         self.assertEqual(ellipse.steps, 350)
         self.assertEqual(circle.trajectory, "circle")
+        self.assertEqual(circle_pid.controller, "task_space_pid")
+        self.assertEqual(line_pid.controller, "task_space_pid")
+        self.assertEqual(ellipse_pid.controller, "task_space_pid")
+        self.assertEqual(triangle_pid.controller, "task_space_pid")
+        self.assertEqual(square_pid.controller, "task_space_pid")
         self.assertEqual(triangle.trajectory, "rounded_triangle")
         self.assertEqual(square.trajectory, "rounded_square")
         self.assertEqual(circle.steps, 350)
+        self.assertEqual(circle_pid.steps, 350)
+        self.assertEqual(line_pid.steps, 200)
+        self.assertEqual(ellipse_pid.steps, 350)
+        self.assertEqual(triangle_pid.steps, 350)
+        self.assertEqual(square_pid.steps, 350)
         self.assertEqual(triangle.steps, 350)
         self.assertEqual(square.steps, 350)
         self.assertEqual(single_target.input_name, "single_target")
         self.assertEqual(single_target.steps, 200)
         self.assertEqual(periodic_random.input_name, "periodic_random")
         self.assertEqual(periodic_random.steps, 925)
+        self.assertEqual(
+            circle_pid.config_rel,
+            "configs/trunk_trajectory_tracking_circle_pid.json",
+        )
+        self.assertEqual(
+            line_pid.config_rel,
+            "configs/trunk_trajectory_tracking_line_pid.json",
+        )
         manifest = build_run_manifest(ellipse, "ellipse_manifest_v1", "batch")
         self.assertEqual(manifest.run_id, "ellipse_manifest_v1")
         self.assertEqual(manifest.mode, "batch")
@@ -59,7 +82,7 @@ class TrajectoryCliTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             resolve_run_spec("unknown", "reference_goal")
         with self.assertRaises(ValueError):
-            resolve_run_spec("line", "pid")
+            resolve_run_spec("line", "lqr")
 
     def test_output_name_cannot_escape_run_directory(self) -> None:
         self.assertEqual(validate_output_name("ellipse_v1"), "ellipse_v1")
@@ -122,6 +145,14 @@ class TrajectoryCliTest(unittest.TestCase):
             "baseline_trajectories", "reference_goal", PROJECT_ROOT
         )
         self.assertEqual([case.input_name for case in cases], ["line", "ellipse"])
+        pid_cases = resolve_tracking_batch(
+            "pid_trajectories", "pid", PROJECT_ROOT
+        )
+        self.assertEqual(
+            [case.input_name for case in pid_cases],
+            ["line", "ellipse", "circle", "rounded_triangle", "rounded_square"],
+        )
+        self.assertTrue(all(case.algorithm == "task_space_pid" for case in pid_cases))
         with self.assertRaises(ValueError):
             resolve_tracking_batch("unregistered", "reference_goal", PROJECT_ROOT)
 

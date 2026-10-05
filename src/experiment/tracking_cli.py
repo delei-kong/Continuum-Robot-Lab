@@ -35,11 +35,20 @@ _INPUT_ALIASES = {
 _ALGORITHM_ALIASES = {
     "reference": "reference_goal",
     "reference_goal": "reference_goal",
+    "pid": "task_space_pid",
+    "task_space_pid": "task_space_pid",
 }
 _TRACKING_BATCHES = {
     # A deliberately small baseline matrix.  Adding a matrix is a reviewed
     # code change rather than a free-form command-line parameter scan.
     "baseline_trajectories": ("line", "ellipse"),
+    "pid_trajectories": (
+        "line",
+        "ellipse",
+        "circle",
+        "rounded_triangle",
+        "rounded_square",
+    ),
 }
 _PRESETS = {
     "line": TrackingPreset(
@@ -120,6 +129,14 @@ _PRESETS = {
             "red point: actual tip; orange line: actual trajectory"
         ),
     ),
+}
+
+_ALGORITHM_CONFIGS = {
+    ("line", "task_space_pid"): "configs/trunk_trajectory_tracking_line_pid.json",
+    ("ellipse", "task_space_pid"): "configs/trunk_trajectory_tracking_ellipse_pid.json",
+    ("circle", "task_space_pid"): "configs/trunk_trajectory_tracking_circle_pid.json",
+    ("rounded_triangle", "task_space_pid"): "configs/trunk_trajectory_tracking_rounded_triangle_pid.json",
+    ("rounded_square", "task_space_pid"): "configs/trunk_trajectory_tracking_rounded_square_pid.json",
 }
 
 
@@ -210,15 +227,20 @@ def resolve_tracking_spec(
     canonical_input = _canonical(input_name, _INPUT_ALIASES, "tracking input")
     canonical_algorithm = _canonical(algorithm, _ALGORITHM_ALIASES, "algorithm")
     preset = _PRESETS[canonical_input]
-    steps = derive_steps_from_config(_load_config(project_root, preset.config_rel))
+    config_rel = _ALGORITHM_CONFIGS.get(
+        (canonical_input, canonical_algorithm), preset.config_rel
+    )
+    steps = derive_steps_from_config(_load_config(project_root, config_rel))
     return TrackingRunSpec(
         input_name=preset.input_name,
         algorithm=canonical_algorithm,
-        config_rel=preset.config_rel,
+        config_rel=config_rel,
         scene_rel=preset.scene_rel,
         artifact_profile=preset.artifact_profile,
         steps=steps,
-        gui_description=preset.gui_description,
+        gui_description=preset.gui_description.replace(
+            "reference_goal", canonical_algorithm
+        ),
     )
 
 
