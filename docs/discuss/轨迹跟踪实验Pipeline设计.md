@@ -157,17 +157,18 @@ SOFA 场景在 `AnimateBegin` 写目标，在 `AnimateEnd` 读取实际末端。
 失败 case 不覆盖其他结果，最后输出聚合表。批量入口稳定并完成自动验证后，再开始 PID
 控制器，以避免同时调试控制算法和实验调度器。
 
-当前已提供第一版单 case 参数化入口：
+当前提供受控的单 case tracking 入口：
 
 ```bash
-python scripts/remote/run_trunk_trajectory_tracking.py \
-  <trajectory> <controller> <run_id>
+python scripts/experiment/run_tracking.py \
+  --input <preset> --algorithm reference_goal --output <run_id>
 ```
 
-省略参数时默认使用 `line + reference_goal`，并生成带 UTC 时间戳的 run ID；只提供第一个
-参数时可以在 `line`、`ellipse`、`circle`、`rounded_triangle` 和 `rounded_square` 之间
-切换。`triangle` 与 `square` 是两个圆角轨迹名称的短别名。入口通过安全注册表映射到固定
-配置，不允许用户参数直接构造远端路径；完整实验矩阵和结果聚合仍属于下一阶段。
+省略参数时默认使用 `line + reference_goal`，并生成带 UTC 时间戳的 run ID。输入可选择
+`line`、`ellipse`、`circle`、`rounded_triangle`、`rounded_square`、`single_target` 和
+`periodic_random`；`triangle`、`square`、`target` 和 `random` 是对应短别名。入口通过安全注册表
+映射到固定配置、场景和产物 profile，不允许用户参数直接构造远端路径。步数由配置推导，完整
+实验矩阵和结果聚合仍属于下一阶段。
 
-默认入口是 batch 模式；在远端 XFCE 工作区追加 `--gui` 可以复用同一注册表打开对应的
-SOFA 可视化场景。batch 与 GUI 使用同一配置和控制循环，区别只在运行显示方式。
+默认入口是 batch 模式；在远端 XFCE 工作区追加 `--mode gui --target server` 可以复用同一注册表
+打开对应的 SOFA 可视化场景。batch 与 GUI 使用同一配置和控制循环，区别只在运行显示方式。

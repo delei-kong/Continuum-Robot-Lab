@@ -36,7 +36,7 @@ From the local project root, run the remote batch validation and retrieve it:
 
 ```bash
 scripts/remote/run_sofa_trunk_demo.sh <unique_run_id>
-scripts/remote/fetch_sofa_demo.sh <unique_run_id>
+scripts/remote/fetch_run.sh sofa_demo <unique_run_id>
 ```
 
 From a terminal in the remote XFCE desktop, run the graphical scene:

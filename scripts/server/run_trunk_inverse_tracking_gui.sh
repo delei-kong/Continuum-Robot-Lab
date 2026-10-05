@@ -63,6 +63,58 @@ export PYTHONPATH="$PROJECT_ROOT/src:$SOFA_PYTHON_ENV/lib/python3.10/site-packag
 export TRUNK_INVERSE_CONFIG="$CONFIG"
 export TRUNK_RUN_DIR="$RUN_DIR"
 
+RUN_FINALIZED=false
+finalize_gui_run() {
+  local process_exit_code="$1"
+  local allow_completed_artifacts="$2"
+  local row_count=0
+
+  if [[ "$RUN_FINALIZED" == "true" ]]; then
+    return 0
+  fi
+  RUN_FINALIZED=true
+
+  if [[ -f "$RUN_DIR/trajectory.csv" ]]; then
+    row_count="$(awk 'END { print (NR > 0 ? NR - 1 : 0) }' "$RUN_DIR/trajectory.csv")"
+  fi
+  printf '%s\n' "$process_exit_code" >"$RUN_DIR/process_exit_code"
+
+  if [[ ( "$process_exit_code" -eq 0 || "$allow_completed_artifacts" == "true" ) \
+    && "$row_count" -eq "$STEPS" \
+    && -s "$RUN_DIR/performance.json" ]] \
+    && ! grep -q '\[ERROR\]' "$RUN_DIR/stdout.log"; then
+    # A GUI close may deliver a signal after the scene has already emitted all
+    # requested records. Preserve that raw process status above, but treat the
+    # fully validated experiment as complete for the common artifact contract.
+    printf '0\n' >"$RUN_DIR/exit_code"
+    touch "$RUN_DIR/COMPLETE"
+    return 0
+  fi
+
+  printf '%s\n' "$process_exit_code" >"$RUN_DIR/exit_code"
+  touch "$RUN_DIR/FAILED"
+  return 1
+}
+
+handle_gui_signal() {
+  local signal_name="$1"
+  local signal_exit_code="$2"
+
+  trap - INT TERM HUP
+  printf '[INFO] GUI runner received %s; validating produced artifacts.\n' \
+    "$signal_name" >>"$RUN_DIR/stdout.log" 2>/dev/null || true
+  if finalize_gui_run "$signal_exit_code" true; then
+    echo "GUI experiment completed after $signal_name: $RUN_DIR"
+    exit 0
+  fi
+  echo "GUI experiment interrupted by $signal_name: $RUN_DIR" >&2
+  exit "$signal_exit_code"
+}
+
+trap 'handle_gui_signal INT 130' INT
+trap 'handle_gui_signal TERM 143' TERM
+trap 'handle_gui_signal HUP 129' HUP
+
 echo "Starting the 25 Hz inverse Trunk target-tracking scene on DISPLAY=$DISPLAY"
 echo "Run ID: $RUN_ID"
 if [[ -n "${TRUNK_INVERSE_GUI_DESCRIPTION:-}" ]]; then
@@ -86,13 +138,9 @@ set +e
   "$SCENE" 2>&1 | tee "$RUN_DIR/stdout.log"
 exit_code=${PIPESTATUS[0]}
 set -e
-printf '%s\n' "$exit_code" >"$RUN_DIR/exit_code"
-if [[ "$exit_code" -eq 0 ]] && [[ -s "$RUN_DIR/performance.json" ]] \
-  && ! grep -q '\[ERROR\]' "$RUN_DIR/stdout.log"; then
-  touch "$RUN_DIR/COMPLETE"
+if finalize_gui_run "$exit_code" false; then
   echo "GUI experiment completed: $RUN_DIR"
 else
-  touch "$RUN_DIR/FAILED"
   echo "GUI experiment failed: $RUN_DIR" >&2
   exit 8
 fi

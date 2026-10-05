@@ -1,10 +1,14 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from evaluation.trajectory_cli import (
+from experiment import tracking_cli
+from experiment.tracking_cli import (
     build_runner_environment,
     default_output_name,
+    derive_steps_from_config,
     resolve_run_spec,
+    resolve_tracking_spec,
     validate_output_name,
 )
 
@@ -18,6 +22,12 @@ class TrajectoryCliTest(unittest.TestCase):
         circle = resolve_run_spec("circle", "reference_goal")
         triangle = resolve_run_spec("triangle", "reference_goal")
         square = resolve_run_spec("rounded_square", "reference_goal")
+        single_target = resolve_tracking_spec(
+            "target", "reference_goal", PROJECT_ROOT
+        )
+        periodic_random = resolve_tracking_spec(
+            "random", "reference_goal", PROJECT_ROOT
+        )
         self.assertEqual(line.trajectory, "line")
         self.assertEqual(line.steps, 200)
         self.assertEqual(ellipse.trajectory, "ellipse")
@@ -28,6 +38,10 @@ class TrajectoryCliTest(unittest.TestCase):
         self.assertEqual(circle.steps, 350)
         self.assertEqual(triangle.steps, 350)
         self.assertEqual(square.steps, 350)
+        self.assertEqual(single_target.input_name, "single_target")
+        self.assertEqual(single_target.steps, 200)
+        self.assertEqual(periodic_random.input_name, "periodic_random")
+        self.assertEqual(periodic_random.steps, 925)
         self.assertEqual(
             build_runner_environment(line)["TRUNK_INVERSE_CONFIG_REL"],
             "configs/trunk_trajectory_tracking_line.json",
@@ -35,6 +49,13 @@ class TrajectoryCliTest(unittest.TestCase):
         self.assertEqual(
             build_runner_environment(triangle)["TRUNK_INVERSE_CONFIG_REL"],
             "configs/trunk_trajectory_tracking_rounded_triangle.json",
+        )
+        self.assertEqual(
+            build_runner_environment(periodic_random)["TRUNK_INVERSE_SCENE_REL"],
+            "src/simulation/scenes/trunk_inverse_tracking.py",
+        )
+        self.assertEqual(
+            build_runner_environment(periodic_random)["TRUNK_INVERSE_STEPS"], "925"
         )
 
     def test_unknown_combination_is_rejected(self) -> None:
@@ -52,22 +73,50 @@ class TrajectoryCliTest(unittest.TestCase):
 
     def test_default_output_name_is_a_valid_run_id(self) -> None:
         output_name = default_output_name()
-        self.assertTrue(output_name.endswith("_trunk_trajectory_cli"))
+        self.assertTrue(output_name.endswith("_tracking"))
         self.assertEqual(validate_output_name(output_name), output_name)
 
-    def test_remote_workspace_runner_uses_server_entrypoint(self) -> None:
-        spec = resolve_run_spec("ellipse", "reference_goal")
-        self.assertEqual(spec.steps, 350)
+    def test_step_derivation_rejects_inconsistent_control_period(self) -> None:
+        with self.assertRaises(ValueError):
+            derive_steps_from_config(
+                {"dt": 0.04, "control_rate_hz": 20.0, "duration_s": 8.0}
+            )
+
+    def test_new_entrypoints_exist(self) -> None:
         self.assertTrue(
             (
                 PROJECT_ROOT
-                / "scripts/server/run_trunk_trajectory_tracking_batch.sh"
+                / "scripts/experiment/run_tracking.py"
             ).is_file()
         )
+
+    @patch("experiment.tracking_cli.run_server_batch", return_value=17)
+    def test_server_batch_dispatches_resolved_spec(self, run_server_batch) -> None:
+        spec = resolve_tracking_spec("ellipse", "reference_goal", PROJECT_ROOT)
+        result = tracking_cli.run_tracking_experiment(
+            PROJECT_ROOT,
+            spec,
+            "ellipse_v1",
+            target="server",
+            mode="batch",
+        )
+        self.assertEqual(result, 17)
+        run_server_batch.assert_called_once_with(PROJECT_ROOT, spec, "ellipse_v1")
+
+    def test_local_gui_is_rejected_before_starting_a_process(self) -> None:
+        spec = resolve_tracking_spec("line", "reference_goal", PROJECT_ROOT)
+        with self.assertRaisesRegex(ValueError, "GUI mode"):
+            tracking_cli.run_tracking_experiment(
+                PROJECT_ROOT,
+                spec,
+                "line_gui_v1",
+                target="local",
+                mode="gui",
+            )
         self.assertTrue(
             (
                 PROJECT_ROOT
-                / "scripts/server/run_trunk_trajectory_tracking_gui.sh"
+                / "scripts/remote/fetch_run.sh"
             ).is_file()
         )
 

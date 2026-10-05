@@ -80,18 +80,11 @@ scripts/remote/sync_workspace.sh
 | 官方 SOFA CableConstraint demo | `scripts/remote/run_sofa_demo.sh <run_id>` |
 | 官方 SoftRobots Trunk demo | `scripts/remote/run_sofa_trunk_demo.sh <run_id>` |
 | 项目 Trunk 单绳周期控制 | `scripts/remote/run_trunk_cycle.sh <run_id>` |
-| 项目 Trunk 25 Hz 逆向点位跟踪 | `scripts/remote/run_trunk_inverse_tracking.sh <run_id>` |
-| 项目 Trunk 25 Hz 周期随机多目标跟踪 | `scripts/remote/run_trunk_inverse_periodic_random.sh <run_id>` |
-| 项目 Trunk 25 Hz 直线轨迹评估 Pipeline | `scripts/remote/run_trunk_trajectory_tracking.sh <run_id>` |
-| 项目 Trunk 25 Hz 椭圆轨迹评估 Pipeline | `scripts/remote/run_trunk_trajectory_tracking_ellipse.sh <run_id>` |
-| 参数化 Trunk 轨迹评估入口 | `python scripts/remote/run_trunk_trajectory_tracking.py <trajectory> <controller> <run_id>` |
+| 统一 Trunk tracking 实验 | `python scripts/experiment/run_tracking.py --input <preset> --algorithm reference_goal --output <run_id>` |
 | 远端桌面 SOFA 可视化 demo | `scripts/server/run_sofa_gui_demo.sh`（在远端终端执行） |
 | 远端桌面 Trunk 可视化 | `scripts/server/run_sofa_trunk_gui.sh`（在远端终端执行） |
 | 远端桌面 Trunk 周期控制 | `scripts/server/run_trunk_cycle_gui.sh [run_id]`（在远端终端执行） |
-| 远端桌面 Trunk 逆向点位跟踪 | `scripts/server/run_trunk_inverse_tracking_gui.sh [run_id]`（在远端终端执行） |
-| 远端桌面 Trunk 周期随机多目标跟踪 | `scripts/server/run_trunk_inverse_periodic_random_gui.sh [run_id]`（在远端终端执行） |
-| 远端桌面 Trunk 直线轨迹评估 Pipeline | `scripts/server/run_trunk_trajectory_tracking_gui.sh [run_id]`（在远端终端执行） |
-| 远端桌面 Trunk 椭圆轨迹评估 Pipeline | `scripts/server/run_trunk_trajectory_tracking_ellipse_gui.sh [run_id]`（在远端终端执行） |
+| 统一 Trunk tracking GUI | `python scripts/experiment/run_tracking.py --input <preset> --algorithm reference_goal --output <run_id> --mode gui --target server`（在远端终端执行） |
 
 PyTorch 冒烟任务由 `tmux` 后台运行；当前 SOFA demo 是带超时限制的同步短任务。正式长任务必须使用 `tmux` 或调度器，不能依赖 SSH 会话存活。
 
@@ -125,7 +118,9 @@ bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_
 观察 25 Hz 官方逆向点位跟踪场景：
 
 ```bash
-bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_inverse_tracking_gui.sh
+python /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/experiment/run_tracking.py \
+  --input single_target --algorithm reference_goal \
+  --output trunk_single_target_gui_v1 --mode gui --target server
 ```
 
 蓝色模型为 Trunk，黄色固定标记为最终目标，绿色点为当前参考，红色点为映射末端，
@@ -135,7 +130,9 @@ bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_
 观察周期随机多目标跟踪场景：
 
 ```bash
-bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_inverse_periodic_random_gui.sh [run_id]
+python /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/experiment/run_tracking.py \
+  --input periodic_random --algorithm reference_goal \
+  --output trunk_periodic_random_gui_v1 --mode gui --target server
 ```
 
 场景使用固定种子生成三个受约束随机目标，并依次循环两轮。黄色、品红和青色固定标记
@@ -145,7 +142,9 @@ bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_
 观察通用轨迹评估 Pipeline 的第一条定时直线轨迹：
 
 ```bash
-bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_trajectory_tracking_gui.sh [run_id]
+python /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/experiment/run_tracking.py \
+  --input line --algorithm reference_goal \
+  --output trunk_line_gui_v1 --mode gui --target server
 ```
 
 场景先在 `[0, -5, 185] mm` 保持 1 秒，再用 5 秒沿绿色参考直线移动到
@@ -156,7 +155,9 @@ bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_
 观察同一 Pipeline 的三维闭合椭圆轨迹：
 
 ```bash
-bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_trunk_trajectory_tracking_ellipse_gui.sh [run_id]
+python /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/experiment/run_tracking.py \
+  --input ellipse --algorithm reference_goal \
+  --output trunk_ellipse_gui_v1 --mode gui --target server
 ```
 
 场景先在 `[0, -5, 185] mm` 保持 1 秒，再用 12 秒完成一圈三维椭圆，最后回到同一
@@ -177,61 +178,46 @@ PyTorch 冒烟测试：
 ```bash
 scripts/remote/status_smoke.sh <run_id>
 scripts/remote/verify_run.sh <run_id>
-scripts/remote/fetch_smoke.sh <run_id>
+scripts/remote/fetch_run.sh smoke <run_id>
 ```
 
-SOFA demo：
+所有 SOFA 实验统一使用：
 
 ```bash
-scripts/remote/fetch_sofa_demo.sh <run_id>
+scripts/remote/fetch_run.sh <profile> <run_id>
 ```
 
-Trunk 周期控制：
+其中 profile 为 `sofa_demo`、`trunk_cycle`、`trunk_inverse_tracking` 或
+`trajectory_tracking`；它决定本地结果目录和必需产物合同。命令拒绝覆盖已存在的本地结果目录。
+
+统一 tracking 入口可在本地或远端工作区直接执行。当前注册输入包括
+`line`/`timed_linear`、`ellipse`/`periodic_ellipse`、`circle`、
+`rounded_triangle`/`triangle`、`rounded_square`/`square`、`single_target`/`target` 和
+`periodic_random`/`random`；当前注册算法为 `reference_goal`（也可写作 `reference`）。
+轨迹、场景、步数和产物 profile 都由注册表和受版本管理的配置确定。例如：
 
 ```bash
-scripts/remote/fetch_trunk_cycle.sh <run_id>
+# 默认直线 tracking、默认算法、自动输出名称
+python scripts/experiment/run_tracking.py
+
+# 本地通过 SSH 发起椭圆 batch
+python scripts/experiment/run_tracking.py \
+  --input ellipse --algorithm reference_goal \
+  --output 20261005_ellipse_reference_batch_v1
+
+# 在远端 XFCE 工作区中启动同一预设的 GUI
+python scripts/experiment/run_tracking.py \
+  --input ellipse --algorithm reference_goal \
+  --output 20261005_ellipse_reference_gui_v1 \
+  --mode gui --target server
+
+# 查看受支持输入、配置和由配置推导的步数
+python scripts/experiment/run_tracking.py --list
 ```
 
-Trunk 25 Hz 逆向点位跟踪：
-
-```bash
-scripts/remote/fetch_trunk_inverse_tracking.sh <run_id>
-```
-
-Trunk 25 Hz 轨迹评估 Pipeline：
-
-```bash
-scripts/remote/fetch_trunk_trajectory_tracking.sh <run_id>
-```
-
-参数化批处理入口可在本地或远端工作区直接执行，当前注册了 `line`/`timed_linear`、
-`ellipse`/`periodic_ellipse`、`circle`、`rounded_triangle`/`triangle` 和
-`rounded_square`/`square`，以及 `reference_goal`（也可写作 `reference`）控制器。省略参数时默认使用
-`line + reference_goal`，输出名称自动生成。例如：
-
-```bash
-# 默认直线轨迹、默认控制器、自动输出名称
-python scripts/remote/run_trunk_trajectory_tracking.py
-
-# 只切换轨迹，控制器和输出名称仍使用默认值
-python scripts/remote/run_trunk_trajectory_tracking.py ellipse
-
-# 显式指定全部参数
-python scripts/remote/run_trunk_trajectory_tracking.py \
-  ellipse reference_goal 20261003_ellipse_reference_cli_v1
-
-# 在远端 XFCE 桌面打开同一实验的可视化窗口
-python scripts/remote/run_trunk_trajectory_tracking.py \
-  ellipse reference_goal 20261003_ellipse_reference_gui_v1 --gui
-
-# 查看所有已经注册的组合
-python scripts/remote/run_trunk_trajectory_tracking.py --list
-```
-
-输出名称只允许字母、数字、点、下划线和短横线，并直接作为远端 `run_id`；配置、场景和
-步数由注册表选择，不接受任意本地路径。不带 `--gui` 时为无窗口 batch；带 `--gui` 时
-必须在远端 XFCE 工作区执行并打开 SOFA 窗口。新增控制器或轨迹时，先在注册表中增加明确
-组合，再补充相应配置和测试。
+输出名称只允许字母、数字、点、下划线和短横线，并直接作为远端 `run_id`；用户参数不能构造
+任意本地或远端路径。步数只由配置推导，不再作为命令行或预设包装脚本中的独立参数。新增算法或
+输入时，先在注册表中增加明确组合，再补充相应配置和测试。
 
 验收通过后，结果分别位于：
 

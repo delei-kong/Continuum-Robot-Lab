@@ -65,6 +65,12 @@ build_source_manifest() {
       echo "Source filenames containing newlines are not supported: $normalized_file" >&2
       return 3
     fi
+    # git ls-files includes tracked paths removed from the worktree until the
+    # deletion is committed. Omit them from the new manifest so the remote
+    # sync protocol can move the previous remote copy into .sync-trash/.
+    if [[ ! -f "$PROJECT_ROOT/$normalized_file" ]]; then
+      continue
+    fi
     file_hash="$(LC_ALL=C shasum -a 256 "$PROJECT_ROOT/$normalized_file" | awk '{print $1}')"
     printf '%s  %s\n' "$file_hash" "$normalized_file" >>"$temporary_file"
   done < <(git -C "$PROJECT_ROOT" ls-files -co --exclude-standard -z)
