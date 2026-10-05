@@ -1,7 +1,7 @@
 # 轨迹跟踪实验 Pipeline 设计
 
 > 日期：2026-10-03
-> 状态：V1 基线完成；直线、椭圆、圆形、圆角三角形和圆角正方形均已验收
+> 状态：V1 基线完成；五条轨迹均已验收；PID 五轨迹 batch 已完成，圆形已完成 GUI 验收，其余四条待 GUI 验收
 
 ## 1. 目标与边界
 
@@ -34,7 +34,7 @@ V1 中的具体组合：
 | 角色 | 当前实现 | 配置类型 |
 |---|---|---|
 | 轨迹 | 定时直线、三维周期椭圆/圆形、闭合圆角多边形 | `timed_linear`、`periodic_ellipse`、`periodic_catmull_rom` |
-| 控制器 | 将参考位置转换为任务空间目标 | `reference_goal` |
+| 控制器 | 参考目标基线、任务空间 PID 外环原型 | `reference_goal`、`task_space_pid` |
 | 后端 | SOFA Trunk + 官方逆向 QP | `sofa_inverse_qp` |
 | 记录器 | 控制循环内存记录 | `InMemoryTrackingRecorder` |
 | 评估器 | 误差、分阶段指标和实时性统计 | `tracking_metrics.py` |
@@ -49,6 +49,7 @@ V1 中的具体组合：
 |---|---|
 | `src/control/tracking_contracts.py` | 参考、观测、命令、控制器协议 |
 | `src/control/reference_controller.py` | 基线控制器与控制器工厂 |
+| `src/control/pid_controller.py` | 任务空间 PID 外环原型与限幅、分阶段状态管理 |
 | `src/simulation/trajectory.py` | 轨迹协议、轨迹工厂及参考路径几何 |
 | `src/simulation/tracking_pipeline.py` | 不依赖 SOFA 的同步实验编排器 |
 | `src/simulation/sofa_tracking_backend.py` | SOFA 数据与统一合同之间的适配 |
@@ -137,6 +138,18 @@ SOFA 场景在 `AnimateBegin` 写目标，在 `AnimateEnd` 读取实际末端。
 圆角三角形和圆角正方形 batch 各出现 1 次超过 40 ms 的控制周期，但 P99 均满足 40 ms
 门限；保留该偶发抖动，待重复实验时继续观察。
 
+任务空间 PID 保守预设的五轨迹 batch 结果：
+
+| 轨迹 | 正式 RMSE | 最大误差 | 控制周期 P99 | 超期次数 | GUI 验收 |
+|---|---:|---:|---:|---:|---|
+| 直线 | 0.02617 mm | 0.08301 mm | 30.719 ms | 0 | 待验收 |
+| 椭圆 | 0.04338 mm | 0.09059 mm | 31.658 ms | 0 | 待验收 |
+| 圆形 | 0.04939 mm | 0.09118 mm | 34.365 ms | 0 | 通过 |
+| 圆角三角形 | 0.04069 mm | 0.09065 mm | 31.142 ms | 0 | 待验收 |
+| 圆角正方形 | 0.04132 mm | 0.09061 mm | 31.312 ms | 1 | 待验收 |
+
+五个 case 均完成 350 步以内的统一产物验证；直线为 200 步，其余轨迹为 350 步。
+
 ## 8. 扩展规则
 
 新增轨迹时：实现 `Trajectory`，注册到 `trajectory_from_mapping`，提供解析参考和阶段名称，
@@ -153,20 +166,21 @@ SOFA 场景在 `AnimateBegin` 写目标，在 `AnimateEnd` 读取实际末端。
 
 ## 9. 下一阶段
 
-下一阶段只增加批量实验能力：使用显式实验矩阵组合配置、为每个 case 生成独立 run 目录，
-失败 case 不覆盖其他结果，最后输出聚合表。批量入口稳定并完成自动验证后，再开始 PID
-控制器，以避免同时调试控制算法和实验调度器。
+下一阶段扩展控制器实验：固定当前保守增益，在椭圆及其他已验收轨迹上比较
+`reference_goal` 与 `task_space_pid`，再进行受控增益扫描和批量汇总。每个新组合仍须完成
+自动指标和人工 GUI 验收。
 
 当前提供受控的单 case tracking 入口：
 
 ```bash
 python scripts/experiment/run_tracking.py \
-  --input <preset> --algorithm reference_goal --output <run_id>
+  --input <preset> --algorithm <algorithm> --output <run_id>
 ```
 
 省略参数时默认使用 `line + reference_goal`，并生成带 UTC 时间戳的 run ID。输入可选择
 `line`、`ellipse`、`circle`、`rounded_triangle`、`rounded_square`、`single_target` 和
-`periodic_random`；`triangle`、`square`、`target` 和 `random` 是对应短别名。入口通过安全注册表
+`periodic_random`；`triangle`、`square`、`target` 和 `random` 是对应短别名。当前 `task_space_pid`
+已登记五种轨迹预设，并通过 `pid_trajectories` 矩阵统一运行。入口通过安全注册表
 映射到固定配置、场景和产物 profile，不允许用户参数直接构造远端路径。步数由配置推导，完整
 实验矩阵和结果聚合仍属于下一阶段。
 

@@ -2,7 +2,7 @@
 
 > 版本：V1.18（2026-10-05）
 > 适用范围：本地 Mac 开发 + 远程 Linux GPU 工作站实验
-> 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、25 Hz 逆向点位跟踪、末端轨迹和实时控制曲线已验证；通用轨迹评估 Pipeline 的直线、椭圆、圆形、圆角三角形和圆角正方形均已通过自动和人工可视化验收
+> 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、25 Hz 逆向点位跟踪、末端轨迹和实时控制曲线已验证；通用轨迹评估 Pipeline 的直线、椭圆、圆形、圆角三角形和圆角正方形均已通过自动和人工可视化验收；圆形任务空间 PID 原型已完成 batch 与 GUI 验收
 
 ## 1. 核心原则
 
@@ -194,7 +194,8 @@ scripts/remote/fetch_run.sh <profile> <run_id>
 统一 tracking 入口可在本地或远端工作区直接执行。当前注册输入包括
 `line`/`timed_linear`、`ellipse`/`periodic_ellipse`、`circle`、
 `rounded_triangle`/`triangle`、`rounded_square`/`square`、`single_target`/`target` 和
-`periodic_random`/`random`；当前注册算法为 `reference_goal`（也可写作 `reference`）。
+`periodic_random`/`random`；当前注册算法为 `reference_goal`（也可写作 `reference`），以及仅
+用于五种轨迹预设的 `task_space_pid`（也可写作 `pid`）。
 轨迹、场景、步数和产物 profile 都由注册表和受版本管理的配置确定。例如：
 
 ```bash
@@ -205,6 +206,16 @@ python scripts/experiment/run_tracking.py
 python scripts/experiment/run_tracking.py \
   --input ellipse --algorithm reference_goal \
   --output 20261005_ellipse_reference_batch_v1
+
+# 运行圆形轨迹的任务空间 PID 原型
+python scripts/experiment/run_tracking.py \
+  --input circle --algorithm pid \
+  --output 20261005_circle_pid_batch_v1
+
+# 批量运行五种已验收轨迹的 PID 预设
+python scripts/experiment/run_tracking.py \
+  --batch pid_trajectories --algorithm pid \
+  --output 20261005_pid_trajectories_v1
 
 # 在远端 XFCE 工作区中启动同一预设的 GUI
 python scripts/experiment/run_tracking.py \
@@ -299,14 +310,16 @@ SoftRobots Trunk 模型的单绳周期控制、末端轨迹显示、控制量内
 周期随机多目标跟踪。通用轨迹、控制器、SOFA 后端、内存记录器和离线指标已通过标准
 接口组合；定时直线和闭合椭圆轨迹均已通过远端自动验证和人工可视化验收。
 圆形、圆角三角形和圆角正方形已接入相同入口，并通过远端 batch 与人工可视化验收。
+圆形任务空间 PID 外环原型也已通过远端 batch 与人工 GUI 验收，当前保守预设尚不代表 PID
+已经优于官方逆向 QP 基线。
 组件职责、时间语义、配置约定、标准产物和扩展规则见
 [轨迹跟踪实验 Pipeline 设计](./discuss/轨迹跟踪实验Pipeline设计.md)。
 
 下一步按以下顺序推进：
 
-1. 补充参数扫描入口，验证 Pipeline 的批量组合能力。
-2. 将末端三轴或目标误差接入同一只读绘图链路。
-3. 接入新的闭环控制器，并在相同轨迹和指标口径下与逆向 QP 基线比较。
+1. 将任务空间 PID 扩展到椭圆及其他已验收轨迹。
+2. 增加受控增益扫描和结果汇总，比较 PID 与逆向 QP 基线。
+3. 将末端三轴或目标误差接入同一只读绘图链路。
 4. 在进入正式实验前，补齐 Git commit、配置快照和资源监控元数据。
 
 已完成验证的数据和已知问题见[远程工作流验收记录](./远程工作流验收记录.md)。

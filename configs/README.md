@@ -22,7 +22,8 @@
 
 轨迹评估配置通过 `trajectory.type`、`controller.type` 和 `backend.type` 选择可替换组件。
 当前轨迹类型为 `timed_linear`、`periodic_ellipse` 和 `periodic_catmull_rom`，控制器为
-`reference_goal`，仿真后端为 `sofa_inverse_qp`。圆形复用椭圆解析模型的等长正交轴特例；
+`reference_goal` 和任务空间外环原型 `task_space_pid`，仿真后端为 `sofa_inverse_qp`。
+`trunk_trajectory_tracking_*_pid.json` 是五种已验收轨迹的保守低增益 PID 初始预设。圆形复用椭圆解析模型的等长正交轴特例；
 圆角多边形复用闭合 Catmull–Rom 模型。控制器负责生成任务空间目标，后端负责通过官方
 逆向 QP 求解绳索驱动，二者不能混为同一组件。正式指标排除 `benchmark_warmup_steps`，同时在
 `performance.json` 的 `tracking.all_steps` 保留全程指标。
