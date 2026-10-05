@@ -16,6 +16,8 @@
   圆角三角形轨迹。
 - `trunk_trajectory_tracking_rounded_square.json`：通过四个控制点的闭合 Catmull–Rom
   圆角正方形轨迹。
+- `trunk_forward_multisine_pilot.json`：Koopman 阶段的正向多绳数据采集 pilot；固定 8 绳
+  多正弦激励、安全动作上限和中心线采样点。
 
 随机多目标配置保存种子、工作空间边界、点间距和距基座范围。实际生成坐标会随运行结果
 写入 `generated_waypoints.json`，保证实验可复现。

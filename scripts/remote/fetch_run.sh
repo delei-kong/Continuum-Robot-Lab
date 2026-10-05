@@ -8,7 +8,7 @@ source "$SCRIPT_DIR/common.sh"
 
 if [[ $# -ne 2 ]]; then
   echo "Usage: $0 <profile> <run_id>" >&2
-  echo "Profiles: smoke, sofa_demo, trunk_cycle, trunk_inverse_tracking, trajectory_tracking" >&2
+  echo "Profiles: smoke, sofa_demo, trunk_cycle, trunk_forward_data, trunk_inverse_tracking, trajectory_tracking" >&2
   exit 2
 fi
 
@@ -28,6 +28,9 @@ case "$PROFILE" in
     ;;
   trunk_cycle)
     LOCAL_RESULTS_ROOT="$PROJECT_ROOT/outputs/trunk_cycle"
+    ;;
+  trunk_forward_data)
+    LOCAL_RESULTS_ROOT="$PROJECT_ROOT/outputs/trunk_forward_data"
     ;;
   trunk_inverse_tracking)
     LOCAL_RESULTS_ROOT="$PROJECT_ROOT/outputs/trunk_inverse_tracking"
@@ -76,6 +79,11 @@ case "$profile" in
   trunk_cycle)
     test -s "$run_dir/trajectory.csv"
     ;;
+  trunk_forward_data)
+    test -s "$run_dir/episode.csv"
+    test -s "$run_dir/effective_config.json"
+    test -s "$run_dir/metadata.json"
+    ;;
   trunk_inverse_tracking|trajectory_tracking)
     test -s "$run_dir/trajectory.csv"
     test -s "$run_dir/performance.json"
@@ -108,6 +116,11 @@ case "$PROFILE" in
     ;;
   trunk_cycle)
     test -s "$LOCAL_RUN_DIR/trajectory.csv"
+    ;;
+  trunk_forward_data)
+    test -s "$LOCAL_RUN_DIR/episode.csv"
+    test -s "$LOCAL_RUN_DIR/effective_config.json"
+    test -s "$LOCAL_RUN_DIR/metadata.json"
     ;;
   trunk_inverse_tracking|trajectory_tracking)
     test -s "$LOCAL_RUN_DIR/trajectory.csv"

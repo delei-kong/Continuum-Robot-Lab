@@ -28,14 +28,13 @@ fi
 SOFA_ROOT="$(cat "$ACTIVE_ROOT_FILE")"
 SOFA_VALIDATION_INSTALL="$(cat "$SOFA_VALIDATION_ACTIVE_ROOT_FILE")"
 SOFA_VALIDATION_LIBRARY="$SOFA_VALIDATION_INSTALL/lib/libSofaValidation.so"
-SOFA_INVERSE_LIBRARY="$SOFA_ROOT/plugins/SoftRobots.Inverse/lib/libSoftRobots.Inverse.so"
 RUNSOFA="$SOFA_ROOT/bin/runSofa"
-if [[ ! -x "$RUNSOFA" || ! -f "$SOFA_VALIDATION_LIBRARY" || ! -f "$SOFA_INVERSE_LIBRARY" ]]; then
-  echo "SOFA inverse runtime is incomplete." >&2
+if [[ ! -x "$RUNSOFA" || ! -f "$SOFA_VALIDATION_LIBRARY" ]]; then
+  echo "SOFA runtime is incomplete." >&2
   exit 4
 fi
 
-MODE="$($SOFA_PYTHON_ENV/bin/python - "$MANIFEST_JSON" "$RUN_ID" <<'PY'
+mapfile -t MANIFEST_FIELDS < <("$SOFA_PYTHON_ENV/bin/python" - "$MANIFEST_JSON" "$RUN_ID" <<'PY'
 import json
 import sys
 
@@ -45,12 +44,25 @@ if payload.get("run_id") != sys.argv[2]:
 mode = payload.get("mode")
 if mode not in {"batch", "gui"}:
     raise SystemExit("manifest mode must be batch or gui")
+pipeline = payload.get("pipeline_id")
+if pipeline not in {"trunk_tracking", "trunk_forward_data"}:
+    raise SystemExit("manifest pipeline is unsupported")
+print(pipeline)
 print(mode)
 PY
-)" || {
+) || {
   echo "Invalid EXPERIMENT_RUN_MANIFEST." >&2
   exit 2
 }
+PIPELINE="${MANIFEST_FIELDS[0]:-}"
+MODE="${MANIFEST_FIELDS[1]:-}"
+if [[ "$PIPELINE" == "trunk_tracking" ]]; then
+  SOFA_INVERSE_LIBRARY="$SOFA_ROOT/plugins/SoftRobots.Inverse/lib/libSoftRobots.Inverse.so"
+  if [[ ! -f "$SOFA_INVERSE_LIBRARY" ]]; then
+    echo "SOFA inverse runtime is incomplete." >&2
+    exit 4
+  fi
+fi
 
 if [[ "$MODE" == "gui" ]]; then
   export DISPLAY="${DISPLAY:-:20}"

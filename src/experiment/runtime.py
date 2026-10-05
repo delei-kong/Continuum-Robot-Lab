@@ -57,7 +57,7 @@ def build_sofa_command(
     sofa_validation_library: Path,
     scene: Path,
 ) -> tuple[str, ...]:
-    """Build the only supported SOFA command shape for a manifest."""
+    """Build the supported SOFA command shape for a registered manifest."""
 
     command: list[str] = [
         str(runsofa),
@@ -70,9 +70,11 @@ def build_sofa_command(
         "SofaPython3",
         "-l",
         "SoftRobots",
-        "-l",
-        "SoftRobots.Inverse",
     ]
+    if manifest.pipeline_id == "trunk_tracking":
+        command.extend(("-l", "SoftRobots.Inverse"))
+    elif manifest.pipeline_id != "trunk_forward_data":
+        raise ValueError(f"unsupported experiment pipeline: {manifest.pipeline_id}")
     if manifest.mode == "batch":
         command.extend(("-g", "batch"))
     else:
@@ -95,19 +97,30 @@ def verify_tracking_artifacts(
     process_exit_code: int | None = None,
     accept_completed_signal: bool = False,
 ) -> ArtifactVerification:
-    """Validate the shared tracking artifact contract before finalization."""
+    """Validate the registered tracking or forward-data artifact contract."""
 
     errors: list[str] = []
     stdout_log = run_dir / "stdout.log"
-    trajectory = run_dir / "trajectory.csv"
-    performance = run_dir / "performance.json"
-    row_count = _trajectory_rows(trajectory)
+    if manifest.artifact_profile == "trunk_forward_data":
+        records = run_dir / "episode.csv"
+        required_summary = None
+    elif manifest.artifact_profile in {"trajectory_tracking", "trunk_inverse_tracking"}:
+        records = run_dir / "trajectory.csv"
+        required_summary = run_dir / "performance.json"
+    else:
+        return ArtifactVerification(
+            row_count=0,
+            errors=(f"unsupported artifact profile: {manifest.artifact_profile}",),
+        )
+    row_count = _trajectory_rows(records)
 
     if process_exit_code not in (None, 0) and not accept_completed_signal:
         errors.append(f"runSofa exit code was {process_exit_code}")
     if row_count != manifest.steps:
         errors.append(f"trajectory row count was {row_count}, expected {manifest.steps}")
-    if not performance.is_file() or performance.stat().st_size == 0:
+    if required_summary is not None and (
+        not required_summary.is_file() or required_summary.stat().st_size == 0
+    ):
         errors.append("performance.json is missing or empty")
     if not stdout_log.is_file() or stdout_log.stat().st_size == 0:
         errors.append("stdout.log is missing or empty")
@@ -123,6 +136,7 @@ def _write_json(path: Path, payload: object) -> None:
 
 
 def _runtime_environment(
+    manifest: RunManifest,
     workspace: Path,
     sofa_root: Path,
     sofa_validation_library: Path,
@@ -139,8 +153,12 @@ def _runtime_environment(
     if environment.get("LD_LIBRARY_PATH"):
         library_paths.append(environment["LD_LIBRARY_PATH"])
     environment["LD_LIBRARY_PATH"] = ":".join(library_paths)
-    # These legacy names are consumed by the unchanged scene layer only.
-    environment["TRUNK_INVERSE_CONFIG"] = str(config)
+    if manifest.pipeline_id == "trunk_tracking":
+        environment["TRUNK_INVERSE_CONFIG"] = str(config)
+    elif manifest.pipeline_id == "trunk_forward_data":
+        environment["TRUNK_FORWARD_CONFIG"] = str(config)
+    else:
+        raise ValueError(f"unsupported experiment pipeline: {manifest.pipeline_id}")
     environment["TRUNK_RUN_DIR"] = str(run_dir)
     return environment
 
@@ -235,7 +253,7 @@ def execute_sofa_run(
     sofa_root: Path,
     sofa_validation_library: Path,
 ) -> int:
-    """Execute and finalize one registered SOFA tracking run."""
+    """Execute and finalize one registered SOFA experiment."""
 
     workspace = workspace.resolve()
     run_dir = workspace / "runs" / manifest.run_id
@@ -267,7 +285,7 @@ def execute_sofa_run(
     process_exit_code = _run_sofa(
         command,
         environment=_runtime_environment(
-            workspace, sofa_root, sofa_validation_library, config, run_dir
+            manifest, workspace, sofa_root, sofa_validation_library, config, run_dir
         ),
         stdout_log=run_dir / "stdout.log",
         mode=manifest.mode,

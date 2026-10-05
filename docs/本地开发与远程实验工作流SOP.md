@@ -2,7 +2,7 @@
 
 > 版本：V1.18（2026-10-05）
 > 适用范围：本地 Mac 开发 + 远程 Linux GPU 工作站实验
-> 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、25 Hz 逆向点位跟踪、末端轨迹和实时控制曲线已验证；通用轨迹评估 Pipeline 的直线、椭圆、圆形、圆角三角形和圆角正方形均已通过自动和人工可视化验收；圆形任务空间 PID 原型已完成 batch 与 GUI 验收
+> 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、25 Hz 逆向点位跟踪、末端轨迹和实时控制曲线已验证；通用轨迹评估 Pipeline 及其五种任务空间 PID 预设均已通过自动和人工可视化验收
 
 ## 1. 核心原则
 
@@ -246,6 +246,7 @@ python scripts/experiment/run_tracking.py \
 - `outputs/remote_smoke/<run_id>/`
 - `outputs/sofa_demo/<run_id>/`
 - `outputs/trunk_cycle/<run_id>/`
+- `outputs/trunk_forward_data/<run_id>/`
 - `outputs/trunk_inverse_tracking/<run_id>/`
 - `outputs/trajectory_tracking/<run_id>/`
 
@@ -310,19 +311,42 @@ SoftRobots Trunk 模型的单绳周期控制、末端轨迹显示、控制量内
 周期随机多目标跟踪。通用轨迹、控制器、SOFA 后端、内存记录器和离线指标已通过标准
 接口组合；定时直线和闭合椭圆轨迹均已通过远端自动验证和人工可视化验收。
 圆形、圆角三角形和圆角正方形已接入相同入口，并通过远端 batch 与人工可视化验收。
-圆形任务空间 PID 外环原型也已通过远端 batch 与人工 GUI 验收，当前保守预设尚不代表 PID
-已经优于官方逆向 QP 基线。
+五种任务空间 PID 预设均已通过远端 batch 与人工 GUI 验收，当前保守预设尚不代表 PID 已经优于
+官方逆向 QP 基线。
 组件职责、时间语义、配置约定、标准产物和扩展规则见
 [轨迹跟踪实验 Pipeline 设计](./discuss/轨迹跟踪实验Pipeline设计.md)。
 
 下一步按以下顺序推进：
 
-1. 将任务空间 PID 扩展到椭圆及其他已验收轨迹。
-2. 增加受控增益扫描和结果汇总，比较 PID 与逆向 QP 基线。
-3. 将末端三轴或目标误差接入同一只读绘图链路。
-4. 在进入正式实验前，补齐 Git commit、配置快照和资源监控元数据。
+1. 建立多绳正向控制、状态观测和数据生成闭环。
+2. 生成用于 Koopman 建模的动力学数据集，并完成数据质量审计。
+3. 完成 Koopman 多步预测评价后，再开展模型强化学习与复杂轨迹控制。
 
 已完成验证的数据和已知问题见[远程工作流验收记录](./远程工作流验收记录.md)。
+
+### 正向多绳数据采集 M1 验收
+
+首个固定 seed 多正弦 pilot 已在 batch 模式完成两次一致性复验：每次 1000 步，包含 8 绳实际指令、
+绳索位移与力、末端位置、10 个中心线采样点的位置与速度；两份 `episode.csv` 的 SHA-256 一致。
+
+M1 的 GUI 人工验收须在远端 XFCE 工作区运行：
+
+```bash
+cd /root/gpufree-share/Continuum-Robot-Lab/workspace
+python scripts/experiment/run_forward_data.py \
+  --input multisine_pilot \
+  --output 20261005_trunk_forward_multisine_gui_m1_v1 \
+  --mode gui --target server
+```
+
+预期现象：Trunk 在约 1 秒静置后受多绳激励连续产生空间形变，红色末端点平滑移动；无明显跳变、
+无界发散、异常穿越或窗口/终端报错。等待命令返回 `experiment_status=complete`，随后从本地回传：
+
+```bash
+scripts/remote/fetch_run.sh trunk_forward_data 20261005_trunk_forward_multisine_gui_m1_v1
+```
+
+用户确认视觉现象且回传结果含 `COMPLETE`、`exit_code=0`、1000 行 `episode.csv` 后，M1 才可标记完成。
 
 ## 6. 故障处理
 

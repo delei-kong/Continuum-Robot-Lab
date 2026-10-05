@@ -28,6 +28,22 @@ def _manifest(*, mode: str = "batch", steps: int = 2) -> RunManifest:
     )
 
 
+def _forward_manifest(*, mode: str = "batch", steps: int = 2) -> RunManifest:
+    return RunManifest(
+        run_id="forward_runtime_test_v1",
+        pipeline_id="trunk_forward_data",
+        input_id="multisine_pilot",
+        algorithm_id="direct_multisine",
+        config_rel="configs/trunk_forward_multisine_pilot.json",
+        scene_rel="src/simulation/scenes/trunk_forward_data.py",
+        artifact_profile="trunk_forward_data",
+        steps=steps,
+        mode=mode,
+        timeout_s=300,
+        gui_description="test forward-data GUI description",
+    )
+
+
 class RunManifestTest(unittest.TestCase):
     def test_round_trip_rejects_unexpected_fields(self) -> None:
         manifest = _manifest(mode="gui", steps=350)
@@ -72,6 +88,16 @@ class RuntimePlanTest(unittest.TestCase):
         self.assertIn("SofaImGui", gui)
         self.assertIn("imgui", gui)
 
+    def test_forward_data_command_excludes_inverse_plugin(self) -> None:
+        command = build_sofa_command(
+            _forward_manifest(),
+            runsofa=Path("/runtime/bin/runSofa"),
+            sofa_validation_library=Path("/runtime/lib/libSofaValidation.so"),
+            scene=Path("/workspace/src/simulation/scenes/trunk_forward_data.py"),
+        )
+        self.assertIn("SoftRobots", command)
+        self.assertNotIn("SoftRobots.Inverse", command)
+
 
 class ArtifactVerificationTest(unittest.TestCase):
     def _write_artifacts(self, root: Path, rows: int, stdout: str = "[INFO] ok\n") -> None:
@@ -100,6 +126,21 @@ class ArtifactVerificationTest(unittest.TestCase):
         self.assertIn("runSofa exit code was 4", result.errors)
         self.assertTrue(any("row count" in error for error in result.errors))
         self.assertTrue(any("[ERROR]" in error for error in result.errors))
+
+    def test_forward_data_artifacts_pass_without_tracking_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (root / "episode.csv").open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=("step", "state"))
+                writer.writeheader()
+                for step in range(2):
+                    writer.writerow({"step": step, "state": 0.0})
+            (root / "stdout.log").write_text("[INFO] ok\n", encoding="utf-8")
+            result = verify_tracking_artifacts(
+                root, _forward_manifest(), process_exit_code=0
+            )
+        self.assertTrue(result.ok)
+        self.assertEqual(result.row_count, 2)
 
 
 if __name__ == "__main__":

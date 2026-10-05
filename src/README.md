@@ -28,7 +28,7 @@ UTC 时间戳。步数由配置推导，用户不能通过命令行传入任意�
 位置和速度连续；它们使用等时分段，不承诺严格恒定弧长速度。
 
 控制器注册表包含 `reference_goal` 基线和 `task_space_pid` 任务空间外环原型；PID 已为五种
-已验收轨迹登记保守低增益预设，但每个组合仍需独立比较指标和完成人工 GUI 验收。
+已验收轨迹登记保守低增益预设，但当前结果不代表 PID 优于 inverse QP 基线。
 
 在远端 XFCE 桌面中增加 `--mode gui --target server` 即打开可视化窗口；不带该选项时只运行 batch
 并生成结果包。
@@ -36,3 +36,14 @@ UTC 时间戳。步数由配置推导，用户不能通过命令行传入任意�
 需要比较已批准的基线轨迹时，使用 `--batch baseline_trajectories --output <batch_id>`。批量矩阵由
 代码注册，当前固定为 line 与 ellipse；每个 case 仍委托给同一单 case 执行内核，并在
 `outputs/tracking_batches/<batch_id>/` 写入 `batch_manifest.json`、`summary.json` 和 `summary.csv`。
+
+Koopman 阶段的正向数据采集由 `simulation/forward_data.py` 定义无 SOFA 依赖的动作安全、时间和激励
+合同，并由 `scenes/trunk_forward_data.py` 将其接入直接绳驱 Trunk。每步记录实际执行绳索动作、绳索
+位移与力、末端位置及中心线位置/速度；该链路不经过 inverse QP。
+
+正向数据实验与 tracking 一样通过受控 Python 入口运行：
+
+```bash
+python scripts/experiment/run_forward_data.py \
+  --input multisine_pilot --output <run_id> --mode batch
+```

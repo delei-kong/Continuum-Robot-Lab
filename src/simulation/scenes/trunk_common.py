@@ -25,6 +25,15 @@ class ObservedTrunk:
     start_marker: Any
 
 
+@dataclass(frozen=True)
+class ForwardObservedTrunk:
+    """Direct-mode Trunk together with mapped tip and centerline observations."""
+
+    trunk: Any
+    tip_dofs: Any
+    centerline_dofs: Any
+
+
 def create_observed_trunk(root_node: Any, config: dict[str, Any]) -> ObservedTrunk:
     """Create the fixed Trunk model and its reusable tip observation objects."""
 
@@ -107,3 +116,25 @@ def create_observed_trunk(root_node: Any, config: dict[str, Any]) -> ObservedTru
         showColor=[0.2, 1.0, 0.2, 1.0],
     )
     return ObservedTrunk(trunk, tip_dofs, tip_monitor, start_marker)
+
+
+def create_forward_observed_trunk(
+    root_node: Any, config: dict[str, Any]
+) -> ForwardObservedTrunk:
+    """Construct direct-mode state probes used for forward dynamics episodes."""
+
+    observed = create_observed_trunk(root_node, config)
+    centerline_z_mm = config["centerline_z_mm"]
+    centerline = observed.trunk.node.addChild("CenterlineObservation")
+    centerline_dofs = centerline.addObject(
+        "MechanicalObject",
+        name="dofs",
+        position=[[0.0, 0.0, float(z_mm)] for z_mm in centerline_z_mm],
+        showObject=False,
+    )
+    centerline.addObject("BarycentricMapping", mapForces=False, mapMasses=False)
+    return ForwardObservedTrunk(
+        trunk=observed.trunk,
+        tip_dofs=observed.tip_dofs,
+        centerline_dofs=centerline_dofs,
+    )
