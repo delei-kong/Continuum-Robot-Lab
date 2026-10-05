@@ -50,7 +50,7 @@
 - 不得要求用户手动拼接 `ssh-keygen`、`ssh-copy-id` 或重定向命令。`authorize_ssh_key.sh` 会读取 `config.local.sh`，必要时从既有私钥生成对应 `.pub` 公钥，安装公钥后自动运行 `check_connection.sh`。
 - 脚本中的 `ssh-copy-id` 会交互式要求远端用户密码；必须由用户输入，Agent 不得索取、记录或代填密码。
 - 只向远端安装 `.pub` 公钥；不得复制、输出或上传 `$REMOTE_IDENTITY` 指向的私钥。
-- 公钥授权恢复后，仍须按正常流程执行远端漂移检查和工作区同步；需要恢复自动同步时，依次执行 `scripts/remote/start_auto_sync.sh` 与 `scripts/remote/status_auto_sync.sh`，不得绕过同步保护。
+- 公钥授权恢复后，仍须按正常流程执行远端漂移检查和工作区同步；需要恢复自动同步时，依次执行 `scripts/remote/auto_sync.sh start` 与 `scripts/remote/auto_sync.sh status`，不得绕过同步保护。
 
 ## Git
 

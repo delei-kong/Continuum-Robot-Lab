@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import subprocess
@@ -34,6 +35,11 @@ _INPUT_ALIASES = {
 _ALGORITHM_ALIASES = {
     "reference": "reference_goal",
     "reference_goal": "reference_goal",
+}
+_TRACKING_BATCHES = {
+    # A deliberately small baseline matrix.  Adding a matrix is a reviewed
+    # code change rather than a free-form command-line parameter scan.
+    "baseline_trajectories": ("line", "ellipse"),
 }
 _PRESETS = {
     "line": TrackingPreset(
@@ -239,6 +245,10 @@ def default_output_name() -> str:
     return f"{timestamp}_tracking"
 
 
+def _utc_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 def build_runner_environment(spec: TrackingRunSpec) -> dict[str, str]:
     """Return the deprecated scene bridge for external compatibility only.
 
@@ -389,6 +399,163 @@ def run_tracking_experiment(
     raise ValueError(f"unsupported execution target {target!r}")
 
 
+def format_available_batches() -> str:
+    lines = ["available controlled tracking batches:"]
+    for batch_name, input_names in _TRACKING_BATCHES.items():
+        lines.append(f"  {batch_name}: {', '.join(input_names)}")
+    return "\n".join(lines)
+
+
+def resolve_tracking_batch(
+    batch_name: str, algorithm: str, project_root: Path
+) -> tuple[TrackingRunSpec, ...]:
+    try:
+        input_names = _TRACKING_BATCHES[batch_name]
+    except KeyError as error:
+        choices = ", ".join(sorted(_TRACKING_BATCHES))
+        raise ValueError(
+            f"unsupported tracking batch {batch_name!r}; choose from {choices}"
+        ) from error
+    return tuple(
+        resolve_tracking_spec(input_name, algorithm, project_root)
+        for input_name in input_names
+    )
+
+
+def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_batch_summary(
+    batch_dir: Path, summary: Mapping[str, Any], cases: Sequence[Mapping[str, Any]]
+) -> None:
+    _write_json(batch_dir / "summary.json", summary)
+    with (batch_dir / "summary.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=(
+                "case_id",
+                "input",
+                "run_id",
+                "status",
+                "return_code",
+                "started_at_utc",
+                "finished_at_utc",
+                "error",
+            ),
+        )
+        writer.writeheader()
+        writer.writerows(cases)
+
+
+def run_tracking_batch(
+    project_root: Path,
+    batch_name: str,
+    algorithm: str,
+    output_name: str,
+    *,
+    target: str,
+    results_root: Path | None = None,
+) -> int:
+    """Run a code-registered batch without exposing arbitrary scan parameters.
+
+    Each case delegates to the same single-run API and retains an independent
+    run ID.  Completion data is persisted after every case so one failed case
+    cannot erase the record of preceding successes or prevent later cases.
+    """
+
+    validate_output_name(output_name)
+    cases = resolve_tracking_batch(batch_name, algorithm, project_root)
+    batch_root = results_root or project_root / "outputs" / "tracking_batches"
+    batch_dir = batch_root / output_name
+    try:
+        batch_dir.mkdir(parents=True)
+    except FileExistsError as error:
+        raise ValueError(f"batch output directory already exists: {batch_dir}") from error
+
+    planned_cases: list[dict[str, Any]] = []
+    for spec in cases:
+        run_id = f"{output_name}__{spec.input_name}"
+        validate_output_name(run_id)
+        planned_cases.append(
+            {
+                "case_id": spec.input_name,
+                "input": spec.input_name,
+                "run_id": run_id,
+                "manifest": build_run_manifest(spec, run_id, "batch").to_mapping(),
+            }
+        )
+
+    manifest: dict[str, Any] = {
+        "schema_version": 1,
+        "batch_id": batch_name,
+        "output_name": output_name,
+        "algorithm": _canonical(algorithm, _ALGORITHM_ALIASES, "algorithm"),
+        "target": target,
+        "created_at_utc": _utc_timestamp(),
+        "cases": planned_cases,
+    }
+    _write_json(batch_dir / "batch_manifest.json", manifest)
+
+    case_results: list[dict[str, Any]] = []
+    summary: dict[str, Any] = {
+        "schema_version": 1,
+        "batch_id": batch_name,
+        "output_name": output_name,
+        "status": "running",
+        "created_at_utc": manifest["created_at_utc"],
+        "target": target,
+        "cases": case_results,
+        "succeeded": 0,
+        "failed": 0,
+    }
+    _write_batch_summary(batch_dir, summary, case_results)
+
+    for planned, spec in zip(planned_cases, cases):
+        started_at = _utc_timestamp()
+        try:
+            return_code = run_tracking_experiment(
+                project_root,
+                spec,
+                planned["run_id"],
+                target=target,
+                mode="batch",
+            )
+            error_message = ""
+        except Exception as error:  # Preserve later cases after an adapter failure.
+            return_code = None
+            error_message = f"{type(error).__name__}: {error}"
+        succeeded = return_code == 0
+        case_results.append(
+            {
+                "case_id": planned["case_id"],
+                "input": spec.input_name,
+                "run_id": planned["run_id"],
+                "status": "succeeded" if succeeded else "failed",
+                "return_code": return_code,
+                "started_at_utc": started_at,
+                "finished_at_utc": _utc_timestamp(),
+                "error": error_message,
+            }
+        )
+        summary["succeeded"] = sum(
+            result["status"] == "succeeded" for result in case_results
+        )
+        summary["failed"] = len(case_results) - summary["succeeded"]
+        _write_batch_summary(batch_dir, summary, case_results)
+
+    summary["status"] = "complete"
+    summary["finished_at_utc"] = _utc_timestamp()
+    _write_batch_summary(batch_dir, summary, case_results)
+    print(f"batch_output_dir={batch_dir}")
+    print(f"batch_succeeded={summary['succeeded']}")
+    print(f"batch_failed={summary['failed']}")
+    return 0 if summary["failed"] == 0 else 1
+
+
 def format_available_runs(project_root: Path | None = None) -> str:
     root = project_root or Path(__file__).resolve().parents[2]
     lines = ["available tracking input/algorithm combinations:"]
@@ -407,7 +574,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--input",
-        default="line",
+        default=None,
         help=(
             "line, ellipse, circle, rounded_triangle, rounded_square, "
             "single_target, or periodic_random (default: line)"
@@ -447,6 +614,16 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="list registered tracking inputs and their resolved step counts",
     )
+    parser.add_argument(
+        "--batch",
+        default=None,
+        help="run one registered batch matrix instead of a single input",
+    )
+    parser.add_argument(
+        "--list-batches",
+        action="store_true",
+        help="list registered tracking batch matrices",
+    )
     return parser
 
 
@@ -454,15 +631,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     project_root = Path(__file__).resolve().parents[2]
+    if args.list and args.list_batches:
+        parser.error("--list and --list-batches cannot be combined")
     if args.list:
         try:
             print(format_available_runs(project_root))
         except ValueError as error:
             parser.error(str(error))
         return 0
+    if args.list_batches:
+        print(format_available_batches())
+        return 0
     output_name = args.output or default_output_name()
     try:
-        spec = resolve_tracking_spec(args.input, args.algorithm, project_root)
+        if args.batch:
+            if args.input is not None:
+                raise ValueError("--input cannot be combined with --batch")
+            if args.mode != "batch":
+                raise ValueError("registered batches only support --mode batch")
+            return run_tracking_batch(
+                project_root,
+                args.batch,
+                args.algorithm,
+                output_name,
+                target=args.target,
+            )
+        spec = resolve_tracking_spec(args.input or "line", args.algorithm, project_root)
         validate_output_name(output_name)
         return run_tracking_experiment(
             project_root,

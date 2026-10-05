@@ -20,7 +20,20 @@ if ! mkdir "$DAEMON_LOCK" 2>/dev/null; then
   exit 0
 fi
 
+active_sync_pid=""
+
+stop_active_sync() {
+  if [[ -n "$active_sync_pid" ]] && kill -0 "$active_sync_pid" 2>/dev/null; then
+    kill -TERM "$active_sync_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$active_sync_pid" ]]; then
+    wait "$active_sync_pid" 2>/dev/null || true
+  fi
+  active_sync_pid=""
+}
+
 cleanup_watcher() {
+  stop_active_sync
   rm -f "$PID_FILE"
   rmdir "$DAEMON_LOCK" 2>/dev/null || true
 }
@@ -80,11 +93,14 @@ while true; do
     write_status "syncing"
     echo "$(date '+%Y-%m-%d %H:%M:%S %z') | local source change detected"
 
-    if "$SCRIPT_DIR/sync_workspace.sh"; then
+    "$SCRIPT_DIR/sync_workspace.sh" &
+    active_sync_pid=$!
+    if wait "$active_sync_pid"; then
       sync_exit_code=0
     else
       sync_exit_code=$?
     fi
+    active_sync_pid=""
     if [[ "$sync_exit_code" -eq 0 ]]; then
       printf '%s\n' "$current_signature" >"$LAST_SIGNATURE_FILE"
       last_success_signature="$current_signature"

@@ -1,3 +1,6 @@
+import csv
+import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -8,7 +11,9 @@ from experiment.tracking_cli import (
     default_output_name,
     derive_steps_from_config,
     resolve_run_spec,
+    resolve_tracking_batch,
     resolve_tracking_spec,
+    run_tracking_batch,
     validate_output_name,
 )
 
@@ -111,6 +116,51 @@ class TrajectoryCliTest(unittest.TestCase):
                 / "scripts/remote/fetch_run.sh"
             ).is_file()
         )
+
+    def test_registered_batch_resolves_only_approved_cases(self) -> None:
+        cases = resolve_tracking_batch(
+            "baseline_trajectories", "reference_goal", PROJECT_ROOT
+        )
+        self.assertEqual([case.input_name for case in cases], ["line", "ellipse"])
+        with self.assertRaises(ValueError):
+            resolve_tracking_batch("unregistered", "reference_goal", PROJECT_ROOT)
+
+    @patch(
+        "experiment.tracking_cli.run_tracking_experiment",
+        side_effect=[0, RuntimeError("simulated adapter failure")],
+    )
+    def test_batch_persists_each_case_and_continues_after_failure(self, runner) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result_root = Path(temporary_directory) / "tracking_batches"
+            result = run_tracking_batch(
+                PROJECT_ROOT,
+                "baseline_trajectories",
+                "reference_goal",
+                "batch_v1",
+                target="server",
+                results_root=result_root,
+            )
+            batch_dir = result_root / "batch_v1"
+            manifest = json.loads(
+                (batch_dir / "batch_manifest.json").read_text(encoding="utf-8")
+            )
+            summary = json.loads(
+                (batch_dir / "summary.json").read_text(encoding="utf-8")
+            )
+            with (batch_dir / "summary.csv").open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+
+        self.assertEqual(result, 1)
+        self.assertEqual(runner.call_count, 2)
+        self.assertEqual([case["run_id"] for case in manifest["cases"]], [
+            "batch_v1__line",
+            "batch_v1__ellipse",
+        ])
+        self.assertEqual(summary["status"], "complete")
+        self.assertEqual(summary["succeeded"], 1)
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual([row["status"] for row in rows], ["succeeded", "failed"])
+        self.assertIn("simulated adapter failure", rows[1]["error"])
 
 
 if __name__ == "__main__":

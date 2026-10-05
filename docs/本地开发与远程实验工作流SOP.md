@@ -1,6 +1,6 @@
 # 本地开发与远程实验工作流 SOP
 
-> 版本：V1.17（2026-10-03）
+> 版本：V1.18（2026-10-05）
 > 适用范围：本地 Mac 开发 + 远程 Linux GPU 工作站实验
 > 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、25 Hz 逆向点位跟踪、末端轨迹和实时控制曲线已验证；通用轨迹评估 Pipeline 的直线、椭圆、圆形、圆角三角形和圆角正方形均已通过自动和人工可视化验收
 
@@ -34,14 +34,14 @@ cd /Users/tory/Desktop/workspace/Continuum-Robot-Lab/workspace
 本机 `.zshrc` 会在终端启动于本项目或进入本项目目录时调用自动同步启动器。启动器具有进程去重机制，不会为多个终端重复创建监控进程；如果监控进程结束，下次进入项目目录时会自动补启。
 
 ```bash
-scripts/remote/status_auto_sync.sh
-scripts/remote/stop_auto_sync.sh
-scripts/remote/start_auto_sync.sh
+scripts/remote/auto_sync.sh status
+scripts/remote/auto_sync.sh stop
+scripts/remote/auto_sync.sh start
 ```
 
 监控器只在可同步源码的内容指纹变化并稳定后上传，不会自动执行 Git commit 或 push。`datasets/`、`outputs/`、本机配置和缓存不会触发源码同步。
 修改 `config.local.sh` 中的主机、端口或密钥后，应执行一次
-`stop_auto_sync.sh` 和 `start_auto_sync.sh`，让长期运行的监控器重新读取连接参数。SSH
+`auto_sync.sh stop` 和 `auto_sync.sh start`，让长期运行的监控器重新读取连接参数。SSH
 和 SCP 默认启用保活及失联检测，避免实例切换时留下长期半开连接。
 
 ### Step 1：完成本地检查
@@ -59,7 +59,7 @@ PYTHONPYCACHEPREFIX=.remote/pycache python3 -m py_compile tests/smoke/remote_gpu
 
 ```bash
 scripts/remote/check_connection.sh
-scripts/remote/status_auto_sync.sh
+scripts/remote/auto_sync.sh status
 ```
 
 自动同步正常时无需重复手动上传。需要立即同步或诊断时仍可运行：
@@ -76,11 +76,12 @@ scripts/remote/sync_workspace.sh
 
 | 用途 | 命令 |
 |---|---|
-| PyTorch GPU 链路冒烟测试 | `scripts/remote/run_smoke.sh <run_id>` |
+| PyTorch GPU 链路冒烟测试 | `scripts/remote/smoke.sh run <run_id>` |
 | 官方 SOFA CableConstraint demo | `scripts/remote/run_sofa_demo.sh <run_id>` |
 | 官方 SoftRobots Trunk demo | `scripts/remote/run_sofa_trunk_demo.sh <run_id>` |
 | 项目 Trunk 单绳周期控制 | `scripts/remote/run_trunk_cycle.sh <run_id>` |
 | 统一 Trunk tracking 实验 | `python scripts/experiment/run_tracking.py --input <preset> --algorithm reference_goal --output <run_id>` |
+| 统一 Trunk tracking 基线批量实验 | `python scripts/experiment/run_tracking.py --batch baseline_trajectories --output <batch_id>` |
 | 远端桌面 SOFA 可视化 demo | `scripts/server/run_sofa_gui_demo.sh`（在远端终端执行） |
 | 远端桌面 Trunk 可视化 | `scripts/server/run_sofa_trunk_gui.sh`（在远端终端执行） |
 | 远端桌面 Trunk 周期控制 | `scripts/server/run_trunk_cycle_gui.sh [run_id]`（在远端终端执行） |
@@ -176,8 +177,8 @@ bash /root/gpufree-share/Continuum-Robot-Lab/workspace/scripts/server/run_sofa_g
 PyTorch 冒烟测试：
 
 ```bash
-scripts/remote/status_smoke.sh <run_id>
-scripts/remote/verify_run.sh <run_id>
+scripts/remote/smoke.sh status <run_id>
+scripts/remote/smoke.sh verify <run_id>
 scripts/remote/fetch_run.sh smoke <run_id>
 ```
 
@@ -213,11 +214,21 @@ python scripts/experiment/run_tracking.py \
 
 # 查看受支持输入、配置和由配置推导的步数
 python scripts/experiment/run_tracking.py --list
+
+# 查看或运行代码登记的批量矩阵（每个 case 独立 run ID）
+python scripts/experiment/run_tracking.py --list-batches
+python scripts/experiment/run_tracking.py \
+  --batch baseline_trajectories \
+  --output 20261005_tracking_baseline_v1
 ```
 
 输出名称只允许字母、数字、点、下划线和短横线，并直接作为远端 `run_id`；用户参数不能构造
 任意本地或远端路径。步数只由配置推导，不再作为命令行或预设包装脚本中的独立参数。新增算法或
 输入时，先在注册表中增加明确组合，再补充相应配置和测试。
+
+批量结果的 case 汇总位于 `outputs/tracking_batches/<batch_id>/`，其中含 `batch_manifest.json`、
+`summary.json` 与 `summary.csv`；每个 case 仍按其 `trajectory_tracking` profile 用
+`fetch_run.sh` 独立回传并验证。失败 case 会被记录，但不阻止矩阵中的后续 case 启动。
 
 验收通过后，结果分别位于：
 
@@ -235,7 +246,7 @@ python scripts/experiment/run_tracking.py --list
 
 1. 由 `scripts/remote/config.example.sh` 生成本地 `config.local.sh`，填写主机、端口、私钥和远程路径。
 2. 执行 `scripts/remote/check_connection.sh` 确认 SSH 和 GPU。
-3. 如 PyTorch 环境不存在，执行 `scripts/remote/setup_smoke_env.sh`。
+3. 如 PyTorch 环境不存在，执行 `scripts/remote/smoke.sh setup`。
 4. 如 SOFA 环境不存在，执行：
 
    ```bash
@@ -305,7 +316,7 @@ SoftRobots Trunk 模型的单绳周期控制、末端轨迹显示、控制量内
 | 现象 | 处理 |
 |---|---|
 | SSH 失败 | 检查 `config.local.sh`、网络、端口和私钥权限 |
-| 自动同步未运行 | 执行 `scripts/remote/status_auto_sync.sh`，必要时重新启动 |
+| 自动同步未运行 | 执行 `scripts/remote/auto_sync.sh status`，必要时重新启动 |
 | `REMOTE_SOURCE_DRIFT` | 停止同步，核对远端修改并通过Git分支回收，不强制覆盖 |
 | 同步校验失败 | 停止启动实验，重新同步并核对失败文件 |
 | 任务无结果 | 检查 `stdout.log`、`exit_code`、`FAILED` 和远程磁盘空间 |

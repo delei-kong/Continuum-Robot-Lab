@@ -29,3 +29,7 @@ UTC 时间戳。步数由配置推导，用户不能通过命令行传入任意�
 
 在远端 XFCE 桌面中增加 `--mode gui --target server` 即打开可视化窗口；不带该选项时只运行 batch
 并生成结果包。
+
+需要比较已批准的基线轨迹时，使用 `--batch baseline_trajectories --output <batch_id>`。批量矩阵由
+代码注册，当前固定为 line 与 ellipse；每个 case 仍委托给同一单 case 执行内核，并在
+`outputs/tracking_batches/<batch_id>/` 写入 `batch_manifest.json`、`summary.json` 和 `summary.csv`。

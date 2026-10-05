@@ -172,3 +172,14 @@ python scripts/experiment/run_tracking.py \
 
 默认入口是 batch 模式；在远端 XFCE 工作区追加 `--mode gui --target server` 可以复用同一注册表
 打开对应的 SOFA 可视化场景。batch 与 GUI 使用同一配置和控制循环，区别只在运行显示方式。
+
+已批准的基线比较使用固定矩阵，而不是开放任意组合：
+
+```bash
+python scripts/experiment/run_tracking.py \
+  --batch baseline_trajectories --output <batch_id>
+```
+
+当前矩阵固定执行 `line` 与 `ellipse`，case run ID 分别为 `<batch_id>__line` 和
+`<batch_id>__ellipse`。某 case 失败会写入批次汇总但不会阻止后续 case；可用
+`--list-batches` 查看可用矩阵。汇总文件保存在 `outputs/tracking_batches/<batch_id>/`。
