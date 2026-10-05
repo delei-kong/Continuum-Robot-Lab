@@ -5,52 +5,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import subprocess
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from .contracts import RUN_ID_PATTERN, RunManifest, TrackingPreset, TrackingRunSpec
 
-RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 _REMOTE_WORKSPACE_PREFIX = "/root/gpufree-share/"
-
-
-@dataclass(frozen=True)
-class TrackingPreset:
-    """Code-owned description of one supported tracking input."""
-
-    input_name: str
-    config_rel: str
-    scene_rel: str
-    artifact_profile: str
-    gui_description: str
-
-
-@dataclass(frozen=True)
-class TrackingRunSpec:
-    """A preset resolved against its configuration-derived step count."""
-
-    input_name: str
-    algorithm: str
-    config_rel: str
-    scene_rel: str
-    artifact_profile: str
-    steps: int
-    gui_description: str
-
-    @property
-    def trajectory(self) -> str:
-        """Compatibility name for callers that previously selected a trajectory."""
-
-        return self.input_name
-
-    @property
-    def controller(self) -> str:
-        """Compatibility name for callers that previously selected a controller."""
-
-        return self.algorithm
 
 
 _INPUT_ALIASES = {
@@ -278,7 +240,11 @@ def default_output_name() -> str:
 
 
 def build_runner_environment(spec: TrackingRunSpec) -> dict[str, str]:
-    """Bridge the resolved spec to the existing Phase-A SOFA adapters."""
+    """Return the deprecated scene bridge for external compatibility only.
+
+    The shared execution core no longer consumes these values.  They remain
+    available for notebooks that imported the Phase-A helper directly.
+    """
 
     return {
         "TRUNK_INVERSE_CONFIG_REL": spec.config_rel,
@@ -287,39 +253,63 @@ def build_runner_environment(spec: TrackingRunSpec) -> dict[str, str]:
     }
 
 
-def _server_environment(project_root: Path, spec: TrackingRunSpec) -> dict[str, str]:
+def build_run_manifest(
+    spec: TrackingRunSpec, output_name: str, mode: str
+) -> RunManifest:
+    """Create the one internal runtime request for a resolved tracking run."""
+
+    validate_output_name(output_name)
+    if mode not in {"batch", "gui"}:
+        raise ValueError(f"unsupported execution mode {mode!r}")
+    return RunManifest(
+        run_id=output_name,
+        pipeline_id="trunk_tracking",
+        input_id=spec.input_name,
+        algorithm_id=spec.algorithm,
+        config_rel=spec.config_rel,
+        scene_rel=spec.scene_rel,
+        artifact_profile=spec.artifact_profile,
+        steps=spec.steps,
+        mode=mode,
+        timeout_s=300,
+        gui_description=spec.gui_description,
+    )
+
+
+def _runtime_environment(
+    spec: TrackingRunSpec, output_name: str, mode: str
+) -> dict[str, str]:
     environment = dict(os.environ)
-    environment.update(build_runner_environment(spec))
-    environment["TRUNK_INVERSE_CONFIG"] = str(project_root / spec.config_rel)
-    environment["TRUNK_INVERSE_SCENE"] = str(project_root / spec.scene_rel)
-    environment["TRUNK_INVERSE_GUI_DESCRIPTION"] = spec.gui_description
+    environment["EXPERIMENT_RUN_MANIFEST"] = build_run_manifest(
+        spec, output_name, mode
+    ).to_json()
     return environment
 
 
 def run_local_remote(project_root: Path, spec: TrackingRunSpec, output_name: str) -> int:
-    environment = dict(os.environ)
-    environment.update(build_runner_environment(spec))
-    runner = project_root / "scripts" / "remote" / "run_trunk_inverse_tracking.sh"
+    runner = project_root / "scripts" / "remote" / "run_experiment.sh"
     completed = subprocess.run(
-        ["bash", str(runner), output_name], env=environment, check=False
+        ["bash", str(runner), output_name],
+        env=_runtime_environment(spec, output_name, "batch"),
+        check=False,
     )
     return completed.returncode
 
 
 def run_server_batch(project_root: Path, spec: TrackingRunSpec, output_name: str) -> int:
-    runner = project_root / "scripts" / "server" / "run_trunk_trajectory_tracking_batch.sh"
+    runner = project_root / "scripts" / "server" / "run_experiment.sh"
     return subprocess.run(
         ["bash", str(runner), output_name],
-        env=_server_environment(project_root, spec),
+        env=_runtime_environment(spec, output_name, "batch"),
         check=False,
     ).returncode
 
 
 def run_server_gui(project_root: Path, spec: TrackingRunSpec, output_name: str) -> int:
-    runner = project_root / "scripts" / "server" / "run_trunk_inverse_tracking_gui.sh"
+    runner = project_root / "scripts" / "server" / "run_experiment.sh"
     return subprocess.run(
         ["bash", str(runner), output_name],
-        env=_server_environment(project_root, spec),
+        env=_runtime_environment(spec, output_name, "gui"),
         check=False,
     ).returncode
 

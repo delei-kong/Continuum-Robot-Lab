@@ -7,6 +7,7 @@ breaking existing tests and external notebooks during the staged migration.
 from experiment.tracking_cli import (
     RUN_ID_PATTERN,
     TrackingRunSpec,
+    build_run_manifest,
     build_runner_environment,
     default_output_name,
     derive_steps_from_config,
@@ -30,6 +31,7 @@ __all__ = [
     "RUN_ID_PATTERN",
     "TrackingRunSpec",
     "TrajectoryRunSpec",
+    "build_run_manifest",
     "build_runner_environment",
     "default_output_name",
     "derive_steps_from_config",

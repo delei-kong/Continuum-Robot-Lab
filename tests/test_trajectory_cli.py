@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from experiment import tracking_cli
 from experiment.tracking_cli import (
-    build_runner_environment,
+    build_run_manifest,
     default_output_name,
     derive_steps_from_config,
     resolve_run_spec,
@@ -42,21 +42,13 @@ class TrajectoryCliTest(unittest.TestCase):
         self.assertEqual(single_target.steps, 200)
         self.assertEqual(periodic_random.input_name, "periodic_random")
         self.assertEqual(periodic_random.steps, 925)
-        self.assertEqual(
-            build_runner_environment(line)["TRUNK_INVERSE_CONFIG_REL"],
-            "configs/trunk_trajectory_tracking_line.json",
-        )
-        self.assertEqual(
-            build_runner_environment(triangle)["TRUNK_INVERSE_CONFIG_REL"],
-            "configs/trunk_trajectory_tracking_rounded_triangle.json",
-        )
-        self.assertEqual(
-            build_runner_environment(periodic_random)["TRUNK_INVERSE_SCENE_REL"],
-            "src/simulation/scenes/trunk_inverse_tracking.py",
-        )
-        self.assertEqual(
-            build_runner_environment(periodic_random)["TRUNK_INVERSE_STEPS"], "925"
-        )
+        manifest = build_run_manifest(ellipse, "ellipse_manifest_v1", "batch")
+        self.assertEqual(manifest.run_id, "ellipse_manifest_v1")
+        self.assertEqual(manifest.mode, "batch")
+        self.assertEqual(manifest.steps, 350)
+        self.assertEqual(manifest.config_rel, ellipse.config_rel)
+        self.assertEqual(manifest.scene_rel, ellipse.scene_rel)
+        self.assertEqual(manifest.artifact_profile, ellipse.artifact_profile)
 
     def test_unknown_combination_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
