@@ -166,8 +166,9 @@ SOFA 场景在 `AnimateBegin` 写目标，在 `AnimateEnd` 读取实际末端。
 
 ## 9. 下一阶段
 
-V1 tracking Pipeline 的既有验收已收口。下一阶段转入正向多绳数据闭环，为 Koopman 建模和模型强化学习
-提供“状态 + 绳索动作 → 下一状态”的数据来源；inverse QP 和 PID 保留为回归与展示基线。
+V1 tracking Pipeline 的既有验收已收口。正向多绳数据闭环也已完成自动与 GUI 验收，为 Koopman 建模和
+模型强化学习提供“状态 + 绳索动作 → 下一状态”的数据来源；inverse QP 和 PID 保留为回归与展示基线。
+下一阶段生成并审计正式数据集，再开展 Koopman 的独立预测评价。
 
 当前提供受控的单 case tracking 入口：
 
