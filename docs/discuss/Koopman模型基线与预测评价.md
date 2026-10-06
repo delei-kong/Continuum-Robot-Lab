@@ -16,8 +16,8 @@ SOFA 控制闭环。
 
 ## 受控输入与隔离
 
-- 训练入口只接受注册的 `koopman_v1` 和一个已通过的 `dataset_audit` 输出 ID；
-- 训练器重新核验审计状态、状态/动作合同、episode 路径和 CSV SHA-256，拒绝审计后被改动的数据；
+- 训练入口只接受注册的 `koopman_v1` 和一个已通过审计的规范 dataset release ID；
+- 训练器重新核验 release 的 schema、状态/动作合同、transition NPZ 哈希和来源审计哈希，拒绝被改动的数据；
 - 均值和尺度只由 train 的 7,996 条转移拟合；
 - validation 的 3,998 条转移仅用于候选模型选择；
 - test 的 3,998 条转移仅输出最终一次报告，不能反向调整配置。
@@ -58,7 +58,7 @@ SOFA 控制闭环。
 PYTHONPATH=src python scripts/experiment/train_koopman.py \
   --model koopman_v2_rff_candidates \
   --dataset koopman_v1 \
-  --dataset-audit 20261005_koopman_v1_dataset_audit_v1 \
+  --dataset-release 20261005_koopman_v1_v1 \
   --output <validation_output_id> \
   --stage validation
 ```
@@ -69,8 +69,9 @@ PYTHONPATH=src python scripts/experiment/train_koopman.py \
 
 ## 首次结果与结论
 
-首次固定配置运行输出为 `20261006_koopman_v1_fixed_lift_v1`。数据来源为已经冻结的
-`20261005_koopman_v1_dataset_audit_v1`，结果包包含完整的来源哈希、模型参数和 `COMPLETE` 状态。
+首次固定配置运行输出为 `20261006_koopman_v1_fixed_lift_v1`。其来源审计为
+`20261005_koopman_v1_dataset_audit_v1`，并已物化为规范 release `20261005_koopman_v1_v1`；结果包包含
+完整的来源哈希、模型参数和 `COMPLETE` 状态。
 
 验证集以 100 步归一化状态 RMSE 选择 `edmd_rff`（0.7305），优于线性基线（0.7766）。独立测试集上，
 100 步时 `edmd_rff` 仍略优于线性基线：状态 RMSE 为 0.7346 vs 0.7419，末端 RMSE 为 10.90 mm vs

@@ -14,8 +14,12 @@ def _parser() -> argparse.ArgumentParser:
         description="Train registered linear and fixed-lift Koopman dynamics models."
     )
     parser.add_argument("--model", default="koopman_v1_fixed_lift", help="registered model family")
-    parser.add_argument("--dataset", default="koopman_v1", help="registered audited dataset")
-    parser.add_argument("--dataset-audit", default=None, help="approved dataset audit output ID")
+    parser.add_argument("--dataset", default="koopman_v1", help="registered canonical dataset")
+    parser.add_argument(
+        "--dataset-release",
+        default=None,
+        help="accepted canonical dataset release ID below datasets/<dataset>/",
+    )
     parser.add_argument("--output", default=None, help="model output ID")
     parser.add_argument(
         "--stage",
@@ -38,19 +42,19 @@ def main(argv: Iterable[str] | None = None) -> int:
     project_root = Path(__file__).resolve().parents[2]
     try:
         if args.list:
-            if args.dataset_audit or args.output or args.selection or args.stage != "validation":
+            if args.dataset_release or args.output or args.selection or args.stage != "validation":
                 raise ValueError("--list cannot be combined with training options")
             for model_id in available_model_ids():
                 definition = resolve_model_definition(model_id, args.dataset, project_root)
                 print(f"{definition.model_id}: dataset={definition.dataset_id}")
             return 0
-        if not args.dataset_audit or not args.output:
-            raise ValueError("--dataset-audit and --output are required")
+        if not args.dataset_release or not args.output:
+            raise ValueError("--dataset-release and --output are required")
         return train_and_evaluate(
             project_root,
             model_id=args.model,
             dataset_id=args.dataset,
-            dataset_audit_output=args.dataset_audit,
+            dataset_release=args.dataset_release,
             output_id=args.output,
             evaluation_stage=args.stage,
             selection_output=args.selection,

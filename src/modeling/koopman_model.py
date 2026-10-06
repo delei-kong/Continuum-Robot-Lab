@@ -30,10 +30,6 @@ from experiment.contracts import RUN_ID_PATTERN
 from .koopman_dataset import (
     ACTION_COLUMNS,
     STATE_COLUMNS,
-    DatasetEpisode,
-    DynamicsTransition,
-    audit_dataset,
-    load_transitions,
 )
 from .koopman_dataset_cli import resolve_dataset_definition
 
@@ -141,12 +137,16 @@ class KoopmanModelDefinition:
 
 
 @dataclass(frozen=True)
-class AuditedDataset:
+class CanonicalDataset:
     dataset_id: str
-    audit_output_id: str
-    episodes_by_split: Mapping[str, tuple[DatasetEpisode, ...]]
-    audit_sha256: str
-    manifest_sha256: str
+    release_id: str
+    transitions_by_split: Mapping[
+        str, tuple[tuple[np.ndarray, np.ndarray, np.ndarray], ...]
+    ]
+    canonical_manifest_sha256: str
+    schema_sha256: str
+    source_audit_sha256: str
+    source_manifest_sha256: str
 
 
 @dataclass(frozen=True)
@@ -243,6 +243,131 @@ class TrainedDynamicsModel:
         }
 
 
+def load_finalized_koopman_model(
+    project_root: Path, output_id: str
+) -> TrainedDynamicsModel:
+    """Load the validation-selected model from one frozen final result package.
+
+    A controller never chooses an arbitrary candidate from ``models.npz``.  The
+    output must be a completed final evaluation and its selected candidate must
+    agree across ``summary.json`` and ``selection.json``.
+    """
+
+    _validate_output_id(output_id, "Koopman model output")
+    output_dir = project_root / MODEL_OUTPUT_ROOT / output_id
+    summary = _read_mapping(output_dir / "summary.json", "Koopman model summary")
+    selection = _read_mapping(output_dir / "selection.json", "Koopman model selection")
+    if (
+        not (output_dir / "COMPLETE").is_file()
+        or summary.get("status") != "complete"
+        or summary.get("evaluation_stage") != "final"
+        or summary.get("test_evaluated") is not True
+        or selection.get("evaluation_stage") != "validation"
+    ):
+        raise ValueError("Koopman model output is not a completed final evaluation")
+    selected = summary.get("selected_by_validation")
+    if not isinstance(selected, str) or not selected or selection.get("selected_by_validation") != selected:
+        raise ValueError("Koopman final output has no consistent validation-selected model")
+    models_summary = summary.get("models")
+    if not isinstance(models_summary, dict) or not isinstance(models_summary.get(selected), dict):
+        raise ValueError("Koopman final output has no selected model metadata")
+    selected_summary = models_summary[selected]
+    ridge = _positive_float(selected_summary.get("ridge"), "persisted Koopman ridge")
+    lift_kind = selected_summary.get("lift")
+    if lift_kind not in {"linear_affine", "edmd_rff"}:
+        raise ValueError("persisted Koopman model has an unsupported lift")
+
+    model_path = output_dir / "models.npz"
+    try:
+        with np.load(model_path, allow_pickle=False) as archive:
+            required = {
+                "state_mean",
+                "state_scale",
+                "action_mean",
+                "action_scale",
+                f"{selected}_lift_transition",
+                f"{selected}_action_transition",
+                f"{selected}_bias",
+                f"{selected}_frequencies",
+                f"{selected}_phases",
+            }
+            missing = required - set(archive.files)
+            if missing:
+                raise ValueError(
+                    "persisted Koopman arrays are incomplete: " + ", ".join(sorted(missing))
+                )
+            state_mean = np.array(archive["state_mean"], dtype=np.float64, copy=True)
+            state_scale = np.array(archive["state_scale"], dtype=np.float64, copy=True)
+            action_mean = np.array(archive["action_mean"], dtype=np.float64, copy=True)
+            action_scale = np.array(archive["action_scale"], dtype=np.float64, copy=True)
+            lift_transition = np.array(
+                archive[f"{selected}_lift_transition"], dtype=np.float64, copy=True
+            )
+            action_transition = np.array(
+                archive[f"{selected}_action_transition"], dtype=np.float64, copy=True
+            )
+            bias = np.array(archive[f"{selected}_bias"], dtype=np.float64, copy=True)
+            frequencies = np.array(
+                archive[f"{selected}_frequencies"], dtype=np.float64, copy=True
+            )
+            phases = np.array(archive[f"{selected}_phases"], dtype=np.float64, copy=True)
+    except OSError as error:
+        raise ValueError(f"cannot read persisted Koopman model arrays: {model_path}") from error
+
+    state_dimension = len(STATE_COLUMNS)
+    action_dimension = len(ACTION_COLUMNS)
+    feature_dimension = state_dimension + frequencies.shape[1] if frequencies.ndim == 2 else -1
+    if (
+        state_mean.shape != (state_dimension,)
+        or state_scale.shape != (state_dimension,)
+        or action_mean.shape != (action_dimension,)
+        or action_scale.shape != (action_dimension,)
+        or frequencies.ndim != 2
+        or frequencies.shape[0] != state_dimension
+        or phases.shape != (frequencies.shape[1],)
+        or lift_transition.shape != (feature_dimension, feature_dimension)
+        or action_transition.shape != (action_dimension, feature_dimension)
+        or bias.shape != (feature_dimension,)
+    ):
+        raise ValueError("persisted Koopman model arrays do not match the registered dimensions")
+    arrays = (
+        state_mean,
+        state_scale,
+        action_mean,
+        action_scale,
+        frequencies,
+        phases,
+        lift_transition,
+        action_transition,
+        bias,
+    )
+    if not all(np.all(np.isfinite(values)) for values in arrays):
+        raise ValueError("persisted Koopman model arrays contain non-finite values")
+    if np.any(state_scale <= 0.0) or np.any(action_scale <= 0.0):
+        raise ValueError("persisted Koopman normalization scales must be positive")
+    if (lift_kind == "linear_affine") != (frequencies.shape[1] == 0):
+        raise ValueError("persisted Koopman lift metadata does not match its feature arrays")
+    return TrainedDynamicsModel(
+        name=selected,
+        lift=FixedLift(
+            kind=lift_kind,
+            state_dimension=state_dimension,
+            frequencies=frequencies,
+            phases=phases,
+        ),
+        normalization=Normalization(
+            state_mean=state_mean,
+            state_scale=state_scale,
+            action_mean=action_mean,
+            action_scale=action_scale,
+        ),
+        lift_transition=lift_transition,
+        action_transition=action_transition,
+        bias=bias,
+        ridge=ridge,
+    )
+
+
 def available_model_ids() -> tuple[str, ...]:
     return tuple(_MODEL_CONFIGS)
 
@@ -322,91 +447,137 @@ def resolve_model_definition(
     )
 
 
-def load_audited_dataset(
-    project_root: Path, dataset_id: str, audit_output_id: str
-) -> AuditedDataset:
-    """Resolve and revalidate one controlled dataset-audit output directory."""
-
-    _validate_output_id(audit_output_id, "dataset audit output")
-    definition = resolve_dataset_definition(dataset_id, project_root)
-    dataset_dir = project_root / "outputs" / "koopman_datasets" / audit_output_id
-    manifest_path = dataset_dir / "dataset_manifest.json"
-    audit_path = dataset_dir / "audit.json"
-    manifest = _read_mapping(manifest_path, "dataset manifest")
-    audit = _read_mapping(audit_path, "dataset audit")
-    if manifest.get("dataset_id") != definition.dataset_id or audit.get("ok") is not True:
-        raise ValueError("dataset audit output is not an accepted registered dataset")
-    if audit.get("state_columns") != list(STATE_COLUMNS) or audit.get("action_columns") != list(ACTION_COLUMNS):
-        raise ValueError("dataset audit state/action contract does not match Koopman model")
-    entries = manifest.get("episodes")
-    audit_entries = audit.get("episodes")
-    if not isinstance(entries, list) or not isinstance(audit_entries, list):
-        raise ValueError("dataset audit output has no episode provenance")
-    audit_by_id = {
-        item.get("episode_id"): item
-        for item in audit_entries
-        if isinstance(item, dict) and isinstance(item.get("episode_id"), str)
-    }
-    episodes_by_split: dict[str, list[DatasetEpisode]] = {split: [] for split in _SPLITS}
-    for entry in entries:
-        if not isinstance(entry, dict):
-            raise ValueError("dataset manifest contains an invalid episode entry")
-        episode_id = entry.get("episode_id")
-        split = entry.get("split")
-        if not isinstance(episode_id, str) or split not in episodes_by_split:
-            raise ValueError("dataset manifest episode has invalid ID or split")
-        _validate_output_id(episode_id, "dataset episode ID")
-        run_dir = project_root / "outputs" / "trunk_forward_data" / episode_id
-        expected_run_dir = entry.get("run_dir")
-        if not isinstance(expected_run_dir, str) or Path(expected_run_dir).resolve() != run_dir.resolve():
-            raise ValueError(f"dataset manifest run directory does not match {episode_id!r}")
-        audit_entry = audit_by_id.get(episode_id)
-        if not isinstance(audit_entry, dict) or audit_entry.get("split") != split:
-            raise ValueError(f"dataset audit has no matching entry for {episode_id!r}")
-        if audit_entry.get("errors") not in ([], ()):
-            raise ValueError(f"dataset episode {episode_id!r} did not pass its audit")
-        episodes_by_split[split].append(
-            DatasetEpisode(episode_id, split, run_dir / "episode.csv", definition.dt_s)
-        )
-    episodes = tuple(episode for split in _SPLITS for episode in episodes_by_split[split])
-    report = audit_dataset(episodes, definition.policy)
-    if not report.ok:
-        raise ValueError("dataset artifacts no longer satisfy the approved audit contract")
-    audited_hashes = {entry.episode_id: entry.sha256 for entry in report.episodes}
-    for episode_id, expected in audit_by_id.items():
-        if episode_id in audited_hashes and expected.get("sha256") != audited_hashes[episode_id]:
-            raise ValueError(f"dataset episode {episode_id!r} changed after audit")
-    return AuditedDataset(
-        dataset_id=dataset_id,
-        audit_output_id=audit_output_id,
-        episodes_by_split={split: tuple(episodes_by_split[split]) for split in _SPLITS},
-        audit_sha256=_sha256(audit_path),
-        manifest_sha256=_sha256(manifest_path),
+def _load_split_transitions(
+    release_dir: Path,
+    split: str,
+    payload: Mapping[str, Any],
+) -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], ...]:
+    transition_path = payload.get("transitions_path")
+    expected_hash = payload.get("transitions_sha256")
+    episode_count = payload.get("episode_count")
+    transition_count = payload.get("transitions")
+    declared_episodes = payload.get("episodes")
+    if not isinstance(transition_path, str) or not isinstance(expected_hash, str):
+        raise ValueError(f"canonical {split} split has no transition provenance")
+    if isinstance(episode_count, bool) or not isinstance(episode_count, int) or episode_count < 1:
+        raise ValueError(f"canonical {split} split has an invalid episode count")
+    if isinstance(transition_count, bool) or not isinstance(transition_count, int) or transition_count < 1:
+        raise ValueError(f"canonical {split} split has an invalid transition count")
+    if not isinstance(declared_episodes, list) or len(declared_episodes) != episode_count:
+        raise ValueError(f"canonical {split} split has invalid episode provenance")
+    declared_ids = []
+    for entry in declared_episodes:
+        if not isinstance(entry, dict) or not isinstance(entry.get("episode_id"), str):
+            raise ValueError(f"canonical {split} split has an invalid episode ID")
+        declared_ids.append(entry["episode_id"])
+    if len(set(declared_ids)) != len(declared_ids):
+        raise ValueError(f"canonical {split} split repeats an episode ID")
+    path = (release_dir / transition_path).resolve()
+    try:
+        path.relative_to(release_dir.resolve())
+    except ValueError as error:
+        raise ValueError(f"canonical {split} transition path escapes its release") from error
+    if not path.is_file() or _sha256(path) != expected_hash:
+        raise ValueError(f"canonical {split} transition file is missing or changed")
+    with np.load(path, allow_pickle=False) as arrays:
+        required = {"state", "action", "next_state", "episode_index", "episode_ids"}
+        if set(arrays.files) != required:
+            raise ValueError(f"canonical {split} transition file has an invalid array schema")
+        state = np.asarray(arrays["state"], dtype=np.float64)
+        action = np.asarray(arrays["action"], dtype=np.float64)
+        next_state = np.asarray(arrays["next_state"], dtype=np.float64)
+        episode_index = np.asarray(arrays["episode_index"], dtype=np.int32)
+        episode_ids = np.asarray(arrays["episode_ids"])
+    if (
+        state.ndim != 2
+        or next_state.shape != state.shape
+        or state.shape[1] != len(STATE_COLUMNS)
+        or action.shape != (len(state), len(ACTION_COLUMNS))
+        or episode_index.shape != (len(state),)
+        or episode_ids.shape != (episode_count,)
+    ):
+        raise ValueError(f"canonical {split} transition arrays have invalid shapes")
+    if len(state) != transition_count:
+        raise ValueError(f"canonical {split} transition count does not match its manifest")
+    if not len(state) or not all(np.all(np.isfinite(values)) for values in (state, action, next_state)):
+        raise ValueError(f"canonical {split} transition arrays contain no finite data")
+    if not np.array_equal(np.unique(episode_index), np.arange(episode_count, dtype=np.int32)):
+        raise ValueError(f"canonical {split} episode indexes are not contiguous")
+    if tuple(str(value) for value in episode_ids.tolist()) != tuple(declared_ids):
+        raise ValueError(f"canonical {split} episode IDs do not match its manifest")
+    if np.any(np.diff(episode_index) < 0):
+        raise ValueError(f"canonical {split} transitions are not grouped by episode")
+    return tuple(
+        (state[episode_index == index], action[episode_index == index], next_state[episode_index == index])
+        for index in range(episode_count)
     )
 
 
-def _transition_arrays(
-    transitions: Sequence[DynamicsTransition],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    if not transitions:
-        raise ValueError("an episode has no model transitions")
-    state = np.asarray([transition.state for transition in transitions], dtype=np.float64)
-    action = np.asarray([transition.action for transition in transitions], dtype=np.float64)
-    next_state = np.asarray([transition.next_state for transition in transitions], dtype=np.float64)
-    expected = (len(transitions), len(STATE_COLUMNS))
-    if state.shape != expected or next_state.shape != expected:
-        raise ValueError("transition state shape violates the Koopman dataset contract")
-    if action.shape != (len(transitions), len(ACTION_COLUMNS)):
-        raise ValueError("transition action shape violates the Koopman dataset contract")
-    if not all(np.all(np.isfinite(values)) for values in (state, action, next_state)):
-        raise ValueError("training transitions contain non-finite values")
-    return state, action, next_state
+def load_canonical_dataset(
+    project_root: Path, dataset_id: str, release_id: str
+) -> CanonicalDataset:
+    """Load the versioned data package; modeling never reads raw run outputs."""
 
-
-def _load_split_transitions(
-    episodes: Sequence[DatasetEpisode],
-) -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], ...]:
-    return tuple(_transition_arrays(load_transitions(episode)) for episode in episodes)
+    _validate_output_id(release_id, "dataset release")
+    definition = resolve_dataset_definition(dataset_id, project_root)
+    release_dir = project_root / "datasets" / definition.dataset_id / release_id
+    manifest_path = release_dir / "dataset_manifest.json"
+    schema_path = release_dir / "schema.json"
+    complete_path = release_dir / "COMPLETE"
+    manifest = _read_mapping(manifest_path, "canonical dataset manifest")
+    schema = _read_mapping(schema_path, "canonical dataset schema")
+    schema_dt_s = schema.get("dt_s")
+    if isinstance(schema_dt_s, bool) or not isinstance(schema_dt_s, (int, float)):
+        raise ValueError("canonical dataset schema has an invalid dt_s")
+    if (
+        manifest.get("format") != "continuum_dynamics_dataset_v1"
+        or manifest.get("status") != "complete"
+        or manifest.get("dataset_id") != definition.dataset_id
+        or manifest.get("release_id") != release_id
+    ):
+        raise ValueError("canonical dataset manifest does not match the registered dataset")
+    if not complete_path.is_file():
+        raise ValueError("canonical dataset release is not marked complete")
+    if (
+        schema.get("format") != "continuum_dynamics_dataset_v1"
+        or schema.get("dataset_id") != definition.dataset_id
+        or schema.get("state_columns") != list(STATE_COLUMNS)
+        or schema.get("action_columns") != list(ACTION_COLUMNS)
+        or abs(float(schema_dt_s) - definition.dt_s) > 1e-12
+    ):
+        raise ValueError("canonical dataset schema does not match the Koopman contract")
+    source_audit = manifest.get("source_audit")
+    splits = manifest.get("splits")
+    if not isinstance(source_audit, dict) or not isinstance(splits, dict):
+        raise ValueError("canonical dataset has no provenance or split manifest")
+    source_audit_sha256 = source_audit.get("audit_sha256")
+    source_manifest_sha256 = source_audit.get("source_manifest_sha256")
+    if not isinstance(source_audit_sha256, str) or not isinstance(source_manifest_sha256, str):
+        raise ValueError("canonical dataset source audit hashes are invalid")
+    copied_audit = release_dir / "provenance" / "audit.json"
+    copied_source_manifest = release_dir / "provenance" / "source_manifest.json"
+    if (
+        not copied_audit.is_file()
+        or not copied_source_manifest.is_file()
+        or _sha256(copied_audit) != source_audit_sha256
+        or _sha256(copied_source_manifest) != source_manifest_sha256
+    ):
+        raise ValueError("canonical dataset provenance files are missing or changed")
+    transitions_by_split: dict[str, tuple[tuple[np.ndarray, np.ndarray, np.ndarray], ...]] = {}
+    for split in _SPLITS:
+        payload = splits.get(split)
+        if not isinstance(payload, dict):
+            raise ValueError(f"canonical dataset split is missing: {split}")
+        transitions_by_split[split] = _load_split_transitions(release_dir, split, payload)
+    return CanonicalDataset(
+        dataset_id=dataset_id,
+        release_id=release_id,
+        transitions_by_split=transitions_by_split,
+        canonical_manifest_sha256=_sha256(manifest_path),
+        schema_sha256=_sha256(schema_path),
+        source_audit_sha256=source_audit_sha256,
+        source_manifest_sha256=source_manifest_sha256,
+    )
 
 
 def fit_normalization(
@@ -581,15 +752,16 @@ def _model_summary(model: TrainedDynamicsModel) -> dict[str, object]:
     }
 
 
-def _dataset_provenance(dataset: AuditedDataset) -> dict[str, object]:
+def _dataset_provenance(dataset: CanonicalDataset) -> dict[str, object]:
     return {
         "dataset_id": dataset.dataset_id,
-        "audit_output_id": dataset.audit_output_id,
-        "audit_sha256": dataset.audit_sha256,
-        "dataset_manifest_sha256": dataset.manifest_sha256,
-        "splits": {
-            split: [episode.episode_id for episode in dataset.episodes_by_split[split]]
-            for split in _SPLITS
+        "release_id": dataset.release_id,
+        "canonical_manifest_sha256": dataset.canonical_manifest_sha256,
+        "schema_sha256": dataset.schema_sha256,
+        "source_audit_sha256": dataset.source_audit_sha256,
+        "source_manifest_sha256": dataset.source_manifest_sha256,
+        "split_episode_counts": {
+            split: len(dataset.transitions_by_split[split]) for split in _SPLITS
         },
     }
 
@@ -609,7 +781,7 @@ def _load_selection(
     project_root: Path,
     selection_output: str,
     definition: KoopmanModelDefinition,
-    dataset: AuditedDataset,
+    dataset: CanonicalDataset,
     model_config_sha256: str,
 ) -> str:
     _validate_output_id(selection_output, "selection output")
@@ -622,10 +794,10 @@ def _load_selection(
         raise ValueError("model selection belongs to a different registered model")
     if payload.get("model_config_sha256") != model_config_sha256:
         raise ValueError("model configuration changed after validation selection")
-    if payload.get("dataset_audit_sha256") != dataset.audit_sha256:
-        raise ValueError("dataset audit changed after validation selection")
-    if payload.get("dataset_manifest_sha256") != dataset.manifest_sha256:
-        raise ValueError("dataset manifest changed after validation selection")
+    if payload.get("canonical_manifest_sha256") != dataset.canonical_manifest_sha256:
+        raise ValueError("canonical dataset manifest changed after validation selection")
+    if payload.get("schema_sha256") != dataset.schema_sha256:
+        raise ValueError("canonical dataset schema changed after validation selection")
     selected = payload.get("selected_by_validation")
     if selected not in {candidate.name for candidate in definition.rff_candidates}:
         raise ValueError("model selection does not name a registered Koopman candidate")
@@ -637,7 +809,7 @@ def train_and_evaluate(
     *,
     model_id: str,
     dataset_id: str,
-    dataset_audit_output: str,
+    dataset_release: str,
     output_id: str,
     evaluation_stage: str,
     selection_output: str | None,
@@ -658,12 +830,11 @@ def train_and_evaluate(
     except FileExistsError as error:
         raise ValueError(f"model output directory already exists: {output_dir}") from error
     try:
-        dataset = load_audited_dataset(project_root, definition.dataset_id, dataset_audit_output)
+        dataset = load_canonical_dataset(project_root, definition.dataset_id, dataset_release)
         model_config_path = project_root / definition.config_rel
         model_config_sha256 = _sha256(model_config_path)
         split_transitions = {
-            split: _load_split_transitions(dataset.episodes_by_split[split])
-            for split in ("train", "validation")
+            split: dataset.transitions_by_split[split] for split in ("train", "validation")
         }
         normalization, models = fit_models(definition, split_transitions["train"])
         validation_metrics = {
@@ -679,7 +850,7 @@ def train_and_evaluate(
                 dataset,
                 model_config_sha256,
             )
-            test_transitions = _load_split_transitions(dataset.episodes_by_split["test"])
+            test_transitions = dataset.transitions_by_split["test"]
             test_models = ("linear_affine", selected_model)
             test_metrics = {
                 name: evaluate_model(models[name], test_transitions, definition.evaluation)
@@ -692,7 +863,7 @@ def train_and_evaluate(
             "model_id": definition.model_id,
             "model_config": definition.config_rel,
             "dataset_id": definition.dataset_id,
-            "dataset_audit_output": dataset_audit_output,
+            "dataset_release": dataset_release,
             "output_id": output_id,
             "evaluation_stage": evaluation_stage,
             "selection_output": selection_output,
@@ -706,8 +877,8 @@ def train_and_evaluate(
             "evaluation_stage": "validation",
             "model_id": definition.model_id,
             "model_config_sha256": model_config_sha256,
-            "dataset_audit_sha256": dataset.audit_sha256,
-            "dataset_manifest_sha256": dataset.manifest_sha256,
+            "canonical_manifest_sha256": dataset.canonical_manifest_sha256,
+            "schema_sha256": dataset.schema_sha256,
             "selected_by_validation": selected_model,
             "selection_metric": "primary_rollout.state_normalized_rmse",
             "primary_horizon_steps": max(definition.evaluation.rollout_horizons),

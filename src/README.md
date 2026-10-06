@@ -53,8 +53,10 @@ python scripts/experiment/run_forward_data.py \
 质量审计；`scripts/experiment/audit_koopman_dataset.py` 只从已回传的受控 batch 组装数据集，不接受任意
 CSV 路径。
 
-`modeling/koopman_model.py` 只读取已经通过审计的数据集输出，使用训练 split 拟合归一化、线性仿射
-动力学基线和固定随机 Fourier 升维的 EDMDc/Koopman 模型。验证 split 选择模型；测试 split 仅报告一次。
-`scripts/experiment/train_koopman.py` 只接受受控数据集 ID、审计输出 ID 与新的模型输出 ID，不接受任意
-CSV、配置或模型路径。每个模型结果写入 `outputs/koopman_models/<output_id>/`，包含模型参数、归一化、
-数据来源哈希、验证/测试的一步与多步指标以及标准完成状态。
+审计通过的正式数据会物化到 `datasets/<dataset_id>/<release_id>/`，其 `transitions/<split>.npz` 固化
+`state/action/next_state`、episode 边界和来源哈希；模型训练不再读取 `outputs/` 中的原始 run。
+`modeling/koopman_model.py` 只读取这一规范数据集 release，使用训练 split 拟合归一化、线性仿射动力学
+基线和固定随机 Fourier 升维的 EDMDc/Koopman 模型。验证 split 选择模型；测试 split 仅报告一次。
+`scripts/experiment/train_koopman.py` 只接受受控数据集 ID、release ID 与新的模型输出 ID，不接受任意 CSV、
+配置或模型路径。每个模型结果写入 `outputs/koopman_models/<output_id>/`，包含模型参数、归一化、数据来源
+哈希、验证/测试的一步与多步指标以及标准完成状态。

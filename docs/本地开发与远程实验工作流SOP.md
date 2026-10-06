@@ -389,8 +389,17 @@ python scripts/experiment/audit_koopman_dataset.py \
   --output <dataset_audit_id>
 ```
 
-仅当 `outputs/koopman_datasets/<dataset_audit_id>/audit.json` 显示通过时，才允许将该数据集用于 Koopman
-拟合。详细的状态/动作选择、时序对齐和质量条件见
+仅当 `outputs/koopman_datasets/<dataset_audit_id>/audit.json` 显示通过时，才允许物化规范 release：
+
+```bash
+python scripts/experiment/audit_koopman_dataset.py \
+  --dataset koopman_v1 \
+  --materialize-from <dataset_audit_id> \
+  --release <release_id>
+```
+
+release 写入 Git 忽略的 `datasets/koopman_v1/<release_id>/`；Koopman 拟合只允许读取其中的规范 transition
+文件，不能直接读取 `outputs/` 中的原始 episode。详细的状态/动作选择、时序对齐和质量条件见
 [Koopman 数据集设计与质量审计](./discuss/Koopman数据集设计与质量审计.md)。
 
 ## 6. 故障处理

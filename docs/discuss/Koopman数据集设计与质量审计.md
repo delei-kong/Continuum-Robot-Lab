@@ -1,6 +1,6 @@
 # Koopman 数据集设计与质量审计
 
-> 状态：M2 正式数据集已采集并通过审计，待 Koopman 建模
+> 状态：正式数据集已审计并物化为规范 release，供后续建模与控制使用
 > 日期：2026-10-05
 
 ## 1. 目标
@@ -79,8 +79,18 @@ python scripts/experiment/audit_koopman_dataset.py \
 ```
 
 该入口只接收注册的数据集 ID、batch 输出 ID 和审计输出 ID；原始文件路径不能由命令行指定。审计通过后，
-`outputs/koopman_datasets/<dataset_audit_id>/` 中的 `dataset_manifest.json` 与 `audit.json` 才是 M2
-Koopman 训练允许使用的数据来源。
+必须进一步物化为 Git 忽略的规范数据集 release：
+
+```bash
+PYTHONPATH=src python scripts/experiment/audit_koopman_dataset.py \
+  --dataset koopman_v1 \
+  --materialize-from <dataset_audit_id> \
+  --release <release_id>
+```
+
+release 固定写入 `datasets/<dataset_id>/<release_id>/`：它保留按 split 的 episode CSV、训练统一使用的
+`transitions/<split>.npz`、schema、审计副本、有效配置、运行元数据与 SHA-256。`outputs/koopman_datasets/`
+仅保留审计运行证据；Koopman 训练只允许读取规范 release。
 
 ## 6. 首次正式数据集记录
 
@@ -89,3 +99,7 @@ Koopman 训练允许使用的数据来源。
 `20261005_koopman_v1_test_v1`。它包含 8 个独立 episode、16,000 行观测和 15,992 条转移；
 所有数值有限、跨 split SHA-256 不重复，命令限幅比例为 0.35%–0.80%。后续模型训练必须引用这一审计
 输出，不得以 M1 pilot 或 GUI canary 替换其中任一 split。
+
+该审计结果已物化为 `datasets/koopman_v1/20261005_koopman_v1_v1/`，格式为
+`continuum_dynamics_dataset_v1`。它包含 8 个 CSV episode、train/validation/test 三个 NPZ transition
+文件和完整 provenance；文件由 `.gitignore` 忽略。
