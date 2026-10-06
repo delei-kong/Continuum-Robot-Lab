@@ -1,0 +1,26 @@
+{
+  "model_id": "koopman_v1_fixed_lift",
+  "dataset_id": "koopman_v1",
+  "normalization": {
+    "minimum_scale": 1e-06
+  },
+  "linear_affine": {
+    "ridge": 0.0001
+  },
+  "edmd_rff": {
+    "ridge": 0.0001,
+    "feature_count": 96,
+    "bandwidth": 2.0,
+    "random_seed": 20261005
+  },
+  "evaluation": {
+    "rollout_horizons": [
+      1,
+      10,
+      50,
+      100
+    ],
+    "rollout_start_stride": 50,
+    "max_starts_per_episode": 40
+  }
+}

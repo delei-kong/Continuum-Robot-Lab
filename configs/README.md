@@ -19,6 +19,10 @@
 - `trunk_forward_multisine_pilot.json`：Koopman 阶段的正向多绳数据采集 pilot；固定 8 绳
   多正弦激励、安全动作上限和中心线采样点。
 - `koopman_dataset_v1.json`：正式 Koopman v1 数据集的 split 及行数、动作覆盖和限幅比例质量门禁。
+- `koopman_model_v1.json`：正式 Koopman v1 的线性仿射基线、固定随机 Fourier 升维 EDMDc、训练集归一化
+  以及独立 split 上的一步/多步预测评价口径。
+- `koopman_model_v2.json`：三个预注册的固定 RFF 升维候选；仅允许在 validation 阶段选择，最终测试必须
+  引用其冻结的选择输出。
 - `trunk_forward_koopman_v1_*.json`：正式 Koopman v1 的逐 episode 本地参数文件；它们由 Git 忽略，
   但会通过 `scripts/remote/sync.include` 同步至远端执行镜像。实际使用的配置仍会快照进各 run 的
   `effective_config.json`，作为可追溯记录。

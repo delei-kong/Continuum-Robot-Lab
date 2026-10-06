@@ -16,3 +16,6 @@
 
 `test_koopman_dataset.py` 验证 Koopman 数据集的 episode 时序、状态—动作—下一状态对齐、数值质量、
 动作覆盖和 train/validation/test 内容隔离；同样不依赖 SOFA。
+
+`test_koopman_model.py` 验证线性与固定升维 Koopman 模型的状态/动作维度、固定随机种子、一步预测及
+episode 内多步滚动评价；不读取正式数据集，也不依赖 SOFA。

@@ -1,0 +1,43 @@
+{
+  "model_id": "koopman_v2_rff_candidates",
+  "dataset_id": "koopman_v1",
+  "normalization": {
+    "minimum_scale": 1e-06
+  },
+  "linear_affine": {
+    "ridge": 0.0001
+  },
+  "edmd_rff_candidates": [
+    {
+      "name": "edmd_rff_48_b1",
+      "ridge": 0.0001,
+      "feature_count": 48,
+      "bandwidth": 1.0,
+      "random_seed": 20261011
+    },
+    {
+      "name": "edmd_rff_96_b2",
+      "ridge": 0.0001,
+      "feature_count": 96,
+      "bandwidth": 2.0,
+      "random_seed": 20261012
+    },
+    {
+      "name": "edmd_rff_192_b3",
+      "ridge": 0.001,
+      "feature_count": 192,
+      "bandwidth": 3.0,
+      "random_seed": 20261013
+    }
+  ],
+  "evaluation": {
+    "rollout_horizons": [
+      1,
+      10,
+      50,
+      100
+    ],
+    "rollout_start_stride": 50,
+    "max_starts_per_episode": 40
+  }
+}
