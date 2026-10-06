@@ -101,8 +101,8 @@ def create_observed_trunk(root_node: Any, config: dict[str, Any]) -> ObservedTru
         indices=[0],
         listening=False,
         showTrajectories=True,
-        TrajectoriesPrecision=float(config["trajectory_precision_s"]),
-        TrajectoriesColor=config["trajectory_color_rgba"],
+        TrajectoriesPrecision=float(config.get("trajectory_precision_s", 0.02)),
+        TrajectoriesColor=config.get("trajectory_color_rgba", [1.0, 0.45, 0.0, 1.0]),
         sizeFactor=2.0,
     )
 
