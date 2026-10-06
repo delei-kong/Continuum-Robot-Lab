@@ -1,0 +1,3 @@
+# 实验配置是本地资产，不作为源码提交；需要远端执行时由
+# scripts/remote/sync.include 显式同步。
+*.json

@@ -1,3 +1,4 @@
 # Git-ignored source inputs required by remote experiment execution.
 # Patterns are project-relative and must not escape the workspace.
-configs/trunk_forward_koopman_v1_*.json
+# All local experiment configurations are explicitly available to guarded sync.
+configs/*.json
