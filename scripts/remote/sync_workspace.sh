@@ -5,6 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "$SCRIPT_DIR/common.sh"
 
+if [[ $# -gt 1 || ( $# -eq 1 && "$1" != "--accept-remote-drift" ) ]]; then
+  echo "Usage: $0 [--accept-remote-drift]" >&2
+  exit 2
+fi
+
 PROJECT_NAME="$(basename "$PROJECT_ROOT")"
 PROJECT_PARENT="$(dirname "$PROJECT_ROOT")"
 ARCHIVE_PATH="$REMOTE_STATE_DIR/${PROJECT_NAME}_source.tar.gz"
@@ -15,6 +20,109 @@ SYNC_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 REMOTE_INCOMING_DIR="$REMOTE_PROJECT_PARENT/.sync-incoming"
 REMOTE_ARCHIVE="$REMOTE_INCOMING_DIR/${PROJECT_NAME}_${SYNC_ID}.tar.gz"
 REMOTE_MANIFEST="$REMOTE_INCOMING_DIR/${PROJECT_NAME}_${SYNC_ID}.sha256"
+
+accept_remote_drift() {
+  remote_exec bash -s -- "$REMOTE_PROJECT_PARENT" "$REMOTE_PROJECT_ROOT" "$SYNC_ID" <<'REMOTE_SCRIPT'
+set -euo pipefail
+project_parent="$1"
+project_root="$2"
+sync_id="$3"
+remote_lock="$project_parent/.workspace-sync.lock"
+
+if ! mkdir "$remote_lock" 2>/dev/null; then
+  echo "A remote workspace sync is already in progress." >&2
+  exit 43
+fi
+cleanup() {
+  rmdir "$remote_lock" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+if [[ ! -d "$project_root" || ! -f "$project_root/source_manifest.sha256" ]]; then
+  echo "Remote synchronization baseline is unavailable: $project_root" >&2
+  exit 44
+fi
+if [[ -e "$project_root/.sync-pause" ]]; then
+  echo "Remote synchronization is paused by $project_root/.sync-pause" >&2
+  exit 44
+fi
+
+build_remote_manifest() {
+  local root="$1"
+  local output_file="$2"
+  local temporary_file="${output_file}.tmp.$$"
+  local relative_file normalized_file file_hash
+
+  : >"$temporary_file"
+  while IFS= read -r -d '' relative_file; do
+    normalized_file="${relative_file#./}"
+    file_hash="$(sha256sum "$root/$normalized_file" | awk '{print $1}')"
+    printf '%s  %s\n' "$file_hash" "$normalized_file" >>"$temporary_file"
+  done < <(
+    cd "$root"
+    find . -type f \
+      ! -path './.git/*' \
+      ! -path './.remote/*' \
+      ! -path './.venv/*' \
+      ! -path './datasets/*' \
+      ! -path './outputs/*' \
+      ! -path './artifacts/*' \
+      ! -path './data/*' \
+      ! -path './runs/*' \
+      ! -path './checkpoints/*' \
+      ! -path './scripts/remote/config.local.sh' \
+      ! -path './source_manifest.sha256' \
+      ! -path './.sync-pause' \
+      ! -path '*/__pycache__/*' \
+      ! -path '*/.pytest_cache/*' \
+      ! -path '*/.ipynb_checkpoints/*' \
+      ! -path '*/.mypy_cache/*' \
+      ! -path '*/.ruff_cache/*' \
+      ! -name '*.pyc' \
+      ! -name '*.pt' \
+      ! -name '*.pth' \
+      ! -name '*.mp4' \
+      ! -name '.DS_Store' \
+      ! -name '._*' \
+      -print0
+  )
+  LC_ALL=C sort "$temporary_file" >"$output_file"
+  rm -f "$temporary_file"
+}
+
+current_manifest="$(mktemp)"
+old_manifest="$(mktemp)"
+trap 'rm -f "$current_manifest" "$old_manifest"; cleanup' EXIT INT TERM
+build_remote_manifest "$project_root" "$current_manifest"
+LC_ALL=C sort "$project_root/source_manifest.sha256" >"$old_manifest"
+if cmp -s "$old_manifest" "$current_manifest"; then
+  echo "remote_drift_status=already_clean"
+  exit 0
+fi
+
+backup_root="$project_parent/.sync-trash/${sync_id}_accepted_remote_drift"
+mkdir -p "$backup_root"
+cp "$project_root/source_manifest.sha256" "$backup_root/source_manifest.before.sha256"
+cp "$current_manifest" "$backup_root/source_manifest.current.sha256"
+while IFS='  ' read -r current_hash path; do
+  [[ -n "$path" ]] || continue
+  previous_hash="$(awk -v candidate="$path" '$2 == candidate {print $1}' "$old_manifest")"
+  [[ "$current_hash" == "$previous_hash" ]] && continue
+  [[ -f "$project_root/$path" ]] || continue
+  mkdir -p "$backup_root/$(dirname "$path")"
+  cp -p "$project_root/$path" "$backup_root/$path"
+done <"$current_manifest"
+
+mv "$current_manifest" "$project_root/source_manifest.sha256"
+echo "remote_drift_status=accepted"
+echo "remote_drift_backup=$backup_root"
+REMOTE_SCRIPT
+}
+
+if [[ "${1:-}" == "--accept-remote-drift" ]]; then
+  accept_remote_drift
+  exit 0
+fi
 
 if ! mkdir "$LOCAL_SYNC_LOCK" 2>/dev/null; then
   echo "A local workspace sync is already in progress." >&2

@@ -1,6 +1,6 @@
 # 本地开发与远程实验工作流 SOP
 
-> 版本：V1.18（2026-10-05）
+> 版本：V1.19（2026-10-05）
 > 适用范围：本地 Mac 开发 + 远程 Linux GPU 工作站实验
 > 当前进度：SSH、工作区同步、PyTorch GPU、SOFA/SoftRobots、Trunk 周期控制、25 Hz 逆向点位跟踪、末端轨迹和实时控制曲线已验证；通用轨迹评估 Pipeline 及其五种任务空间 PID 预设均已通过自动和人工可视化验收
 
@@ -69,6 +69,17 @@ scripts/remote/sync_workspace.sh
 ```
 
 每次同步在应用新文件前都会验证远端源码是否仍与上次成功清单一致。发现远端修改、新增或删除时会返回 `REMOTE_SOURCE_DRIFT` 并停止，不覆盖远端。只有最近一次日志包含 `workspace_sync_verification=passed` 才能启动远程实验。
+
+确认本地源码为准、且已获得用户明确授权时，才可执行一次受保护的基线恢复：
+
+```bash
+scripts/remote/sync_workspace.sh --accept-remote-drift
+scripts/remote/sync_workspace.sh
+```
+
+前一条命令不会上传、覆盖或删除远端源码；它会把远端差异与旧清单备份到远端
+`.sync-trash/<sync-id>_accepted_remote_drift/`，并重建同步基线。随后仍必须运行普通同步并取得验证通过。
+`runs/`、`outputs/` 和 `datasets/` 不属于此恢复范围。未经明确授权，仍然只允许停在漂移状态并核对差异。
 
 ### Step 3：启动远程任务
 
@@ -388,7 +399,7 @@ python scripts/experiment/audit_koopman_dataset.py \
 |---|---|
 | SSH 失败 | 检查 `config.local.sh`、网络、端口和私钥权限 |
 | 自动同步未运行 | 执行 `scripts/remote/auto_sync.sh status`，必要时重新启动 |
-| `REMOTE_SOURCE_DRIFT` | 停止同步，核对远端修改并通过Git分支回收，不强制覆盖 |
+| `REMOTE_SOURCE_DRIFT` | 停止同步、核对远端修改；仅在用户明确授权本地为准后，执行 `sync_workspace.sh --accept-remote-drift`，确认备份位置后重新普通同步 |
 | 同步校验失败 | 停止启动实验，重新同步并核对失败文件 |
 | 任务无结果 | 检查 `stdout.log`、`exit_code`、`FAILED` 和远程磁盘空间 |
 | SOFA 不可用 | 运行 `scripts/remote/check_sofa.sh`；实例重建后重新安装 |
@@ -413,6 +424,7 @@ scripts/remote/authorize_ssh_key.sh
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| V1.19 | 2026-10-05 | 增加经明确授权的远端源码漂移基线恢复与备份流程 |
 | V1.17 | 2026-10-03 | 参数化入口新增圆形、圆角三角形和圆角正方形，并完成 batch 与 GUI 验收 |
 | V1.16 | 2026-10-03 | 增加轨迹与控制器参数化单实验入口及默认参数 |
 | V1.15 | 2026-10-03 | 增加通用轨迹跟踪 Pipeline、定时直线与三维闭合椭圆验收流程 |
