@@ -60,3 +60,8 @@ CSV 路径。
 `scripts/experiment/train_koopman.py` 只接受受控数据集 ID、release ID 与新的模型输出 ID，不接受任意 CSV、
 配置或模型路径。每个模型结果写入 `outputs/koopman_models/<output_id>/`，包含模型参数、归一化、数据来源
 哈希、验证/测试的一步与多步指标以及标准完成状态。
+
+`control/koopman_mpc_controller.py` 以验证选择后冻结的 Koopman 模型构造 10 步受约束滚动优化：末端位置
+误差、动作幅值和动作变化率共同构成目标，8 路索长的非负、上界与单步变化率为硬约束。
+`scripts/experiment/run_koopman_mpc.py` 是其独立受控入口；场景每步采集完整 79 维真实 SOFA 状态，输出
+直接索长命令，并将模型来源、控制诊断和标准 tracking 指标写入运行产物。

@@ -8,7 +8,7 @@ source "$SCRIPT_DIR/common.sh"
 
 if [[ $# -ne 2 ]]; then
   echo "Usage: $0 <profile> <run_id>" >&2
-  echo "Profiles: smoke, sofa_demo, trunk_cycle, trunk_forward_data, trunk_inverse_tracking, trajectory_tracking" >&2
+  echo "Profiles: smoke, sofa_demo, trunk_cycle, trunk_forward_data, trunk_inverse_tracking, trajectory_tracking, koopman_mpc_tracking" >&2
   exit 2
 fi
 
@@ -37,6 +37,9 @@ case "$PROFILE" in
     ;;
   trajectory_tracking)
     LOCAL_RESULTS_ROOT="$PROJECT_ROOT/outputs/trajectory_tracking"
+    ;;
+  koopman_mpc_tracking)
+    LOCAL_RESULTS_ROOT="$PROJECT_ROOT/outputs/koopman_mpc_tracking"
     ;;
   *)
     echo "Unsupported fetch profile: $PROFILE" >&2
@@ -84,9 +87,12 @@ case "$profile" in
     test -s "$run_dir/effective_config.json"
     test -s "$run_dir/metadata.json"
     ;;
-  trunk_inverse_tracking|trajectory_tracking)
+  trunk_inverse_tracking|trajectory_tracking|koopman_mpc_tracking)
     test -s "$run_dir/trajectory.csv"
     test -s "$run_dir/performance.json"
+    if [[ "$profile" == "koopman_mpc_tracking" ]]; then
+      test -s "$run_dir/model_provenance.json"
+    fi
     ;;
   *)
     echo "Unsupported fetch profile: $profile" >&2
@@ -122,9 +128,12 @@ case "$PROFILE" in
     test -s "$LOCAL_RUN_DIR/effective_config.json"
     test -s "$LOCAL_RUN_DIR/metadata.json"
     ;;
-  trunk_inverse_tracking|trajectory_tracking)
+  trunk_inverse_tracking|trajectory_tracking|koopman_mpc_tracking)
     test -s "$LOCAL_RUN_DIR/trajectory.csv"
     test -s "$LOCAL_RUN_DIR/performance.json"
+    if [[ "$PROFILE" == "koopman_mpc_tracking" ]]; then
+      test -s "$LOCAL_RUN_DIR/model_provenance.json"
+    fi
     ;;
   sofa_demo)
     ;;

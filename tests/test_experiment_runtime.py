@@ -44,6 +44,22 @@ def _forward_manifest(*, mode: str = "batch", steps: int = 2) -> RunManifest:
     )
 
 
+def _koopman_mpc_manifest(*, mode: str = "batch", steps: int = 2) -> RunManifest:
+    return RunManifest(
+        run_id="koopman_mpc_runtime_test_v1",
+        pipeline_id="trunk_koopman_mpc",
+        input_id="line",
+        algorithm_id="koopman_mpc",
+        config_rel="configs/trunk_koopman_mpc_line.json",
+        scene_rel="src/simulation/scenes/trunk_koopman_mpc.py",
+        artifact_profile="koopman_mpc_tracking",
+        steps=steps,
+        mode=mode,
+        timeout_s=600,
+        gui_description="test K-MPC GUI description",
+    )
+
+
 class RunManifestTest(unittest.TestCase):
     def test_round_trip_rejects_unexpected_fields(self) -> None:
         manifest = _manifest(mode="gui", steps=350)
@@ -98,6 +114,16 @@ class RuntimePlanTest(unittest.TestCase):
         self.assertIn("SoftRobots", command)
         self.assertNotIn("SoftRobots.Inverse", command)
 
+    def test_koopman_mpc_command_excludes_inverse_plugin(self) -> None:
+        command = build_sofa_command(
+            _koopman_mpc_manifest(),
+            runsofa=Path("/runtime/bin/runSofa"),
+            sofa_validation_library=Path("/runtime/lib/libSofaValidation.so"),
+            scene=Path("/workspace/src/simulation/scenes/trunk_koopman_mpc.py"),
+        )
+        self.assertIn("SoftRobots", command)
+        self.assertNotIn("SoftRobots.Inverse", command)
+
 
 class ArtifactVerificationTest(unittest.TestCase):
     def _write_artifacts(self, root: Path, rows: int, stdout: str = "[INFO] ok\n") -> None:
@@ -108,6 +134,46 @@ class ArtifactVerificationTest(unittest.TestCase):
                 writer.writerow({"step": step, "x": 0.0})
         (root / "performance.json").write_text(json.dumps({"completed_steps": rows}), encoding="utf-8")
         (root / "stdout.log").write_text(stdout, encoding="utf-8")
+
+    def _write_koopman_mpc_artifacts(self, root: Path, *, invalid_action: bool = False) -> None:
+        commands = ([0.2] * 8, [0.4] * 8)
+        if invalid_action:
+            commands = ([0.2] * 8, [0.5] * 8)
+        with (root / "trajectory.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=("step", "command_kind", "command_cables_mm", "controller_diagnostics"),
+            )
+            writer.writeheader()
+            for step, command in enumerate(commands):
+                writer.writerow(
+                    {
+                        "step": step,
+                        "command_kind": "cable_displacement",
+                        "command_cables_mm": json.dumps(command),
+                        "controller_diagnostics": json.dumps({"mpc_objective": 1.0}),
+                    }
+                )
+        (root / "performance.json").write_text(json.dumps({"completed_steps": 2}), encoding="utf-8")
+        (root / "stdout.log").write_text("[INFO] ok\n", encoding="utf-8")
+        (root / "effective_config.json").write_text(
+            json.dumps(
+                {
+                    "model": {"final_output_id": "final_v1"},
+                    "action_safety": {
+                        "maximum_displacements_mm": [0.5] * 8,
+                        "max_command_delta_mm": 0.25,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (root / "model_provenance.json").write_text(
+            json.dumps(
+                {"final_output_id": "final_v1", "selected_model": "edmd", "lift_dimension": 80}
+            ),
+            encoding="utf-8",
+        )
 
     def test_complete_artifacts_pass(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -141,6 +207,26 @@ class ArtifactVerificationTest(unittest.TestCase):
             )
         self.assertTrue(result.ok)
         self.assertEqual(result.row_count, 2)
+
+    def test_koopman_mpc_artifacts_use_tracking_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._write_koopman_mpc_artifacts(root)
+            result = verify_tracking_artifacts(
+                root, _koopman_mpc_manifest(), process_exit_code=0
+            )
+        self.assertTrue(result.ok)
+        self.assertEqual(result.row_count, 2)
+
+    def test_koopman_mpc_artifacts_reject_an_unsafe_action(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._write_koopman_mpc_artifacts(root, invalid_action=True)
+            result = verify_tracking_artifacts(
+                root, _koopman_mpc_manifest(), process_exit_code=0
+            )
+        self.assertFalse(result.ok)
+        self.assertTrue(any("slew bound" in error for error in result.errors))
 
 
 if __name__ == "__main__":

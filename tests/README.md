@@ -22,3 +22,6 @@
 
 `test_koopman_model.py` 验证线性与固定升维 Koopman 模型的状态/动作维度、固定随机种子、一步预测及
 episode 内多步滚动评价；不读取正式数据集，也不依赖 SOFA。
+
+`test_koopman_mpc.py` 验证冻结模型加载、MPC 的有限数值、动作上下界和变化率约束；
+`test_koopman_mpc_cli.py` 验证其受控注册入口及统一 manifest 边界。两者均不依赖 SOFA。

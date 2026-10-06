@@ -45,7 +45,7 @@ mode = payload.get("mode")
 if mode not in {"batch", "gui"}:
     raise SystemExit("manifest mode must be batch or gui")
 pipeline = payload.get("pipeline_id")
-if pipeline not in {"trunk_tracking", "trunk_forward_data"}:
+if pipeline not in {"trunk_tracking", "trunk_forward_data", "trunk_koopman_mpc"}:
     raise SystemExit("manifest pipeline is unsupported")
 print(pipeline)
 print(mode)

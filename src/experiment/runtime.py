@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 import platform
 import subprocess
@@ -73,7 +74,7 @@ def build_sofa_command(
     ]
     if manifest.pipeline_id == "trunk_tracking":
         command.extend(("-l", "SoftRobots.Inverse"))
-    elif manifest.pipeline_id != "trunk_forward_data":
+    elif manifest.pipeline_id not in {"trunk_forward_data", "trunk_koopman_mpc"}:
         raise ValueError(f"unsupported experiment pipeline: {manifest.pipeline_id}")
     if manifest.mode == "batch":
         command.extend(("-g", "batch"))
@@ -90,6 +91,70 @@ def _trajectory_rows(path: Path) -> int:
         return sum(1 for _ in csv.DictReader(handle))
 
 
+def _verify_koopman_mpc_artifacts(run_dir: Path, records: Path) -> tuple[str, ...]:
+    """Check persisted direct actions against the fixed K-MPC safety contract."""
+
+    errors: list[str] = []
+    try:
+        effective = json.loads((run_dir / "effective_config.json").read_text(encoding="utf-8"))
+        provenance = json.loads((run_dir / "model_provenance.json").read_text(encoding="utf-8"))
+        if not isinstance(effective, dict) or not isinstance(provenance, dict):
+            raise ValueError("configuration or provenance is not a JSON object")
+        safety = effective.get("action_safety")
+        model = effective.get("model")
+        if not isinstance(safety, dict) or not isinstance(model, dict):
+            raise ValueError("K-MPC effective configuration is incomplete")
+        maxima = safety.get("maximum_displacements_mm")
+        delta = safety.get("max_command_delta_mm")
+        if (
+            not isinstance(maxima, list)
+            or not maxima
+            or not all(isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0.0 for value in maxima)
+            or not isinstance(delta, (int, float))
+            or isinstance(delta, bool)
+            or not math.isfinite(delta)
+            or delta <= 0.0
+        ):
+            raise ValueError("K-MPC action safety configuration is invalid")
+        if provenance.get("final_output_id") != model.get("final_output_id"):
+            raise ValueError("K-MPC model provenance does not match its effective configuration")
+        if not isinstance(provenance.get("selected_model"), str) or not provenance["selected_model"]:
+            raise ValueError("K-MPC model provenance has no selected model")
+        if (
+            isinstance(provenance.get("lift_dimension"), bool)
+            or not isinstance(provenance.get("lift_dimension"), int)
+            or provenance["lift_dimension"] < 1
+        ):
+            raise ValueError("K-MPC model provenance has an invalid lift dimension")
+        previous = [0.0] * len(maxima)
+        with records.open(newline="", encoding="utf-8") as handle:
+            for row_number, row in enumerate(csv.DictReader(handle), start=2):
+                if row.get("command_kind") != "cable_displacement":
+                    raise ValueError(f"row {row_number}: K-MPC command kind is invalid")
+                command = json.loads(row.get("command_cables_mm", ""))
+                if not isinstance(command, list) or len(command) != len(maxima):
+                    raise ValueError(f"row {row_number}: K-MPC command vector is invalid")
+                values = [float(value) for value in command]
+                if not all(math.isfinite(value) for value in values):
+                    raise ValueError(f"row {row_number}: K-MPC command is non-finite")
+                if any(value < -1e-9 or value > maximum + 1e-9 for value, maximum in zip(values, maxima)):
+                    raise ValueError(f"row {row_number}: K-MPC command exceeds its bounds")
+                if any(abs(value - old) > float(delta) + 1e-9 for value, old in zip(values, previous)):
+                    raise ValueError(f"row {row_number}: K-MPC command exceeds its slew bound")
+                previous = values
+                diagnostics = json.loads(row.get("controller_diagnostics", ""))
+                if not isinstance(diagnostics, dict) or not all(
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and math.isfinite(value)
+                    for value in diagnostics.values()
+                ):
+                    raise ValueError(f"row {row_number}: K-MPC diagnostics are invalid")
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+        errors.append(f"K-MPC artifact validation failed: {error}")
+    return tuple(errors)
+
+
 def verify_tracking_artifacts(
     run_dir: Path,
     manifest: RunManifest,
@@ -104,9 +169,18 @@ def verify_tracking_artifacts(
     if manifest.artifact_profile == "trunk_forward_data":
         records = run_dir / "episode.csv"
         required_summary = None
-    elif manifest.artifact_profile in {"trajectory_tracking", "trunk_inverse_tracking"}:
+        required_provenance = None
+    elif manifest.artifact_profile in {
+        "trajectory_tracking",
+        "trunk_inverse_tracking",
+    }:
         records = run_dir / "trajectory.csv"
         required_summary = run_dir / "performance.json"
+        required_provenance = None
+    elif manifest.artifact_profile == "koopman_mpc_tracking":
+        records = run_dir / "trajectory.csv"
+        required_summary = run_dir / "performance.json"
+        required_provenance = run_dir / "model_provenance.json"
     else:
         return ArtifactVerification(
             row_count=0,
@@ -122,6 +196,12 @@ def verify_tracking_artifacts(
         not required_summary.is_file() or required_summary.stat().st_size == 0
     ):
         errors.append("performance.json is missing or empty")
+    if required_provenance is not None and (
+        not required_provenance.is_file() or required_provenance.stat().st_size == 0
+    ):
+        errors.append("model_provenance.json is missing or empty")
+    if manifest.artifact_profile == "koopman_mpc_tracking" and not errors:
+        errors.extend(_verify_koopman_mpc_artifacts(run_dir, records))
     if not stdout_log.is_file() or stdout_log.stat().st_size == 0:
         errors.append("stdout.log is missing or empty")
     elif "[ERROR]" in stdout_log.read_text(encoding="utf-8", errors="replace"):
@@ -157,6 +237,8 @@ def _runtime_environment(
         environment["TRUNK_INVERSE_CONFIG"] = str(config)
     elif manifest.pipeline_id == "trunk_forward_data":
         environment["TRUNK_FORWARD_CONFIG"] = str(config)
+    elif manifest.pipeline_id == "trunk_koopman_mpc":
+        environment["TRUNK_KOOPMAN_MPC_CONFIG"] = str(config)
     else:
         raise ValueError(f"unsupported experiment pipeline: {manifest.pipeline_id}")
     environment["TRUNK_RUN_DIR"] = str(run_dir)

@@ -31,6 +31,8 @@ class ForwardObservedTrunk:
 
     trunk: Any
     tip_dofs: Any
+    tip_monitor: Any
+    start_marker: Any
     centerline_dofs: Any
 
 
@@ -136,5 +138,7 @@ def create_forward_observed_trunk(
     return ForwardObservedTrunk(
         trunk=observed.trunk,
         tip_dofs=observed.tip_dofs,
+        tip_monitor=observed.tip_monitor,
+        start_marker=observed.start_marker,
         centerline_dofs=centerline_dofs,
     )

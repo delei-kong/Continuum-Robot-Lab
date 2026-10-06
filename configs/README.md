@@ -23,6 +23,11 @@
   以及独立 split 上的一步/多步预测评价口径。
 - `koopman_model_v2.json`：三个预注册的固定 RFF 升维候选；仅允许在 validation 阶段选择，最终测试必须
   引用其冻结的选择输出。
+- `trunk_koopman_mpc_line.json`：100 Hz 直驱 Koopman-MPC 基线；固定引用已完成最终评价的模型输出，
+  并登记预测域、末端误差代价、动作/动作增量代价和 8 绳硬约束。
+- `trunk_koopman_mpc_{ellipse,circle,triangle,square}.json`：同一 K-MPC 控制合同下、按正式数据集末端状态
+  覆盖范围设计的中等幅值闭环轨迹集；椭圆、圆形采用解析周期轨迹，三角形、正方形采用平滑的闭合
+  Catmull–Rom 轮廓。它们从自然下垂平衡点起步，避免在预热阶段人为制造模型外推。
 - `trunk_forward_koopman_v1_*.json`：正式 Koopman v1 的逐 episode 本地参数文件；它们由 Git 忽略，
   但会通过 `scripts/remote/sync.include` 同步至远端执行镜像。实际使用的配置仍会快照进各 run 的
   `effective_config.json`，作为可追溯记录。
@@ -37,3 +42,8 @@
 圆角多边形复用闭合 Catmull–Rom 模型。控制器负责生成任务空间目标，后端负责通过官方
 逆向 QP 求解绳索驱动，二者不能混为同一组件。正式指标排除 `benchmark_warmup_steps`，同时在
 `performance.json` 的 `tracking.all_steps` 保留全程指标。
+
+Koopman-MPC 不使用 inverse QP：它直接对 8 路索长位移做滚动优化，模型状态严格复用训练数据的 79 维
+状态合同。控制配置只能引用一个已完成 final 评价的模型输出；运行时会校验其 `COMPLETE`、最终评价状态和
+validation 选择记录，拒绝从模型包中任意挑选候选。每个 K-MPC 配置复用 SofaValidation `Monitor` 显示橙色
+实际末端轨迹，`trajectory_precision_s` 与 `trajectory_color_rgba` 只影响 GUI 显示，不改变控制或记录的数据合同。

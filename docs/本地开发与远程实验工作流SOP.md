@@ -99,6 +99,7 @@ scripts/remote/sync_workspace.sh
 | 统一 Trunk tracking GUI | `python scripts/experiment/run_tracking.py --input <preset> --algorithm reference_goal --output <run_id> --mode gui --target server`（在远端终端执行） |
 | Koopman 正向数据 batch | `python scripts/experiment/run_forward_data.py --batch <registered_batch> --output <batch_id>` |
 | Koopman 数据集审计 | `python scripts/experiment/audit_koopman_dataset.py --dataset koopman_v1 --train-batch <id> --validation-batch <id> --test-batch <id> --output <id>` |
+| Koopman-MPC 直驱基线 | `python scripts/experiment/run_koopman_mpc.py --input <line\|ellipse\|circle\|triangle\|square> --output <run_id>` |
 
 PyTorch 冒烟任务由 `tmux` 后台运行；当前 SOFA demo 是带超时限制的同步短任务。正式长任务必须使用 `tmux` 或调度器，不能依赖 SSH 会话存活。
 
